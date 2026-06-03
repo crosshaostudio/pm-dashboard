@@ -1172,7 +1172,7 @@ function filterByTag(tagId, el){
   document.querySelectorAll('.day-body').forEach(body=>{
     const ds=body.id.replace('body-','');
     body.innerHTML='';
-    let dayTasks=filteredTasks().filter(t=>normDate(t.date)===ds);
+    let dayTasks=filteredTasks().filter(t=>normDate(t.date)===ds&&t.date!=='9999-01-01');
     if(activeTagFilter) dayTasks=dayTasks.filter(t=>(t.tagColor||'none')===activeTagFilter);
     const sorted2=[...dayTasks.filter(t=>!(t.done===true||String(t.done)==='true')),...dayTasks.filter(t=>t.done===true||String(t.done)==='true')];
     sorted2.forEach(t=>body.appendChild(renderTaskEl(t)));
@@ -1274,7 +1274,7 @@ function renderDaily(){
     weekDates.forEach(day=>{
       const ds=fmtDate(day);
       const isToday=ds===fmtDate(today);
-      let dayTasks=filteredTasks().filter(t=>normDate(t.date)===ds);
+      let dayTasks=filteredTasks().filter(t=>normDate(t.date)===ds&&t.date!=='9999-01-01');
       if(activeTagFilter) dayTasks=dayTasks.filter(t=>(t.tagColor||'none')===activeTagFilter);
 
       const card=document.createElement('div');
@@ -1524,6 +1524,23 @@ async function toggleTask(id){
 }
 
 async function deleteTask(id){
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+
+  // If task has gantt dates, only clear the daily date (keep gantt)
+  if(t.ganttStart && t.ganttEnd){
+    const prev=t.date;
+    t.date='';  // remove from daily view
+    renderDaily();renderProjects();
+    const res=await api('updateTask',{id:String(t.id),date:'9999-01-01'}); // sentinel date, hidden from daily
+    if(!res||res.error){
+      t.date=prev;renderDaily();renderProjects();showToast('❌ 刪除失敗，請重試');
+    } else {
+      showToast('✓ 已從每日待辦移除（甘特圖保留）');
+    }
+    return;
+  }
+
+  // No gantt dates — fully delete
   const prev=[...tasks];
   tasks=tasks.filter(t=>String(t.id)!==String(id));
   renderDaily();renderProjects();renderGantt();
