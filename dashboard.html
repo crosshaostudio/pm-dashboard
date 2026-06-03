@@ -377,11 +377,7 @@ async function syncAll(){
   const [t,p,m,n,r]=await Promise.all([
     api('getTasks'),api('getProjects'),api('getMembers'),api('getNotifs'),api('getReminders')
   ]);
-  if(t){
-    console.log('[sync] raw tasks from Sheets:', t.length, 'first:', JSON.stringify(t[0]));
-    tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),date:normDate(x.date),ganttStart:normDate(x.ganttStart),ganttEnd:normDate(x.ganttEnd),tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',repeatRule:x.repeatRule||''}));
-    console.log('[sync] after normDate:', tasks.length, 'first date:', tasks[0]&&tasks[0].date);
-  }
+  if(t) tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),date:normDate(x.date),ganttStart:normDate(x.ganttStart),ganttEnd:normDate(x.ganttEnd),tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',repeatRule:x.repeatRule||''}));
   if(p) projects=p.map(x=>({...x,id:String(x.id),status:x.status||'proposal',owner:x.owner||''})); if(m) members=m;
   if(n) notifications=n; if(r) reminders=r;
 
@@ -390,8 +386,20 @@ async function syncAll(){
     await syncAll(); return;
   }
   await loadInvoiceData();
+
+  // Re-validate activeProject — id must match a project that still exists
+  if(activeProject){
+    const stillExists = projects.find(p=>String(p.id)===String(activeProject));
+    if(!stillExists) activeProject=null;
+  }
+  // Re-validate activeOwnerFilter
+  if(activeOwnerFilter){
+    const hasOwner = projects.some(p=>(p.owner||'未指派')===activeOwnerFilter);
+    if(!hasOwner) activeOwnerFilter=null;
+  }
+
   renderProjects(); renderDaily(); renderGantt(); updateBadge();
-  showToast('✓ 已從 Google Sheets 同步');
+  showToast('✓ 已同步 '+tasks.length+' 筆任務');
 }
 
 function updateBadge(){
@@ -695,7 +703,7 @@ function renderProjects(){
 
     el.onclick=(e)=>{
       if(e.target.closest('.proj-actions')||e.target.classList.contains('proj-name-label')||e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
-      activeProject=p.id; renderProjects(); renderDaily(); renderGantt();
+      activeProject=String(p.id); renderProjects(); renderDaily(); renderGantt();
     };
 
     // Drag handlers
@@ -810,10 +818,13 @@ async function startRename(proj, labelEl){
 function filteredTasks(){
   let base=tasks;
   if(activeOwnerFilter){
-    const ownerProjIds=projects.filter(p=>(p.owner||'未指派')===activeOwnerFilter).map(p=>String(p.id));
+    const ownerProjIds=projects.filter(p=>(p.owner||'未指派')===activeOwnerFilter&&p.status!=='closed').map(p=>String(p.id));
     base=base.filter(t=>ownerProjIds.includes(String(t.projId)));
   }
-  if(activeProject) base=base.filter(t=>String(t.projId)===String(activeProject));
+  if(activeProject){
+    const apStr=String(activeProject);
+    base=base.filter(t=>String(t.projId)===apStr);
+  }
   return base;
 }
 
@@ -1422,7 +1433,13 @@ function startRenameTask(id, btn){
 
 async function quickAdd(input,date){
   const text=input.value.trim();if(!text)return;
-  const projId=activeProject||(projects[0]?projects[0].id:null);
+  // Use active project, or first project of active owner filter, or first project overall
+  let projId=activeProject;
+  if(!projId&&activeOwnerFilter){
+    const ownerProj=projects.find(p=>(p.owner||'未指派')===activeOwnerFilter&&p.status!=='closed');
+    if(ownerProj) projId=ownerProj.id;
+  }
+  if(!projId) projId=projects.find(p=>p.status!=='closed')?.id||null;
   input.value='';
   input.disabled=true;
   const res=await api('addTask',{text,date,projId,done:false,prog:0});
