@@ -377,17 +377,7 @@ async function syncAll(){
   const [t,p,m,n,r]=await Promise.all([
     api('getTasks'),api('getProjects'),api('getMembers'),api('getNotifs'),api('getReminders')
   ]);
-  if(t){
-    const beforeCount=tasks.length;
-    tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),date:normDate(x.date),ganttStart:normDate(x.ganttStart),ganttEnd:normDate(x.ganttEnd),tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',repeatRule:x.repeatRule||''}));
-    console.log('[sync] tasks: before='+beforeCount+' after='+tasks.length+' activeProject='+activeProject+' filter='+activeOwnerFilter);
-    // Show ALL tasks dates to find missing ones
-    const today2=new Date(); const ds=today2.toISOString().slice(0,10);
-    const todayTasks=tasks.filter(t=>t.date===ds||t.date.startsWith(ds));
-    console.log('[sync] today tasks ('+ds+'):', todayTasks.map(t=>t.text+'|proj:'+t.projId));
-    const filtered=filteredTasks();
-    console.log('[sync] filteredTasks:', filtered.length, 'activeProject='+activeProject);
-  }
+  if(t) tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),date:normDate(x.date),ganttStart:normDate(x.ganttStart),ganttEnd:normDate(x.ganttEnd),tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',repeatRule:x.repeatRule||''}));
   if(p) projects=p.map(x=>({...x,id:String(x.id),status:x.status||'proposal',owner:x.owner||''})); if(m) members=m;
   if(n) notifications=n; if(r) reminders=r;
 
@@ -408,7 +398,20 @@ async function syncAll(){
     if(!hasOwner) activeOwnerFilter=null;
   }
 
-  renderProjects(); renderDaily(); renderGantt(); updateBadge();
+  // Save scroll position before re-render
+  const dailyView=document.getElementById('view-daily');
+  const scrollTop=dailyView?dailyView.scrollTop:0;
+
+  renderProjects(); renderGantt(); updateBadge();
+
+  // Re-render daily without auto-scroll to today
+  _syncRender=true;
+  renderDaily();
+  _syncRender=false;
+
+  // Restore scroll position
+  if(dailyView) dailyView.scrollTop=scrollTop;
+
   showToast('✓ 已同步 '+tasks.length+' 筆任務');
 }
 
@@ -1274,11 +1277,13 @@ function renderDaily(){
     });
   }
 
-  // Scroll to today on first render
-  setTimeout(()=>{
-    const todayCard=document.getElementById('day-card-'+fmtDate(today));
-    if(todayCard) todayCard.scrollIntoView({behavior:'smooth',block:'center'});
-  },80);
+  // Only auto-scroll on initial load, not on sync
+  if(!_syncRender){
+    setTimeout(()=>{
+      const todayCard=document.getElementById('day-card-'+fmtDate(today));
+      if(todayCard) todayCard.scrollIntoView({behavior:'smooth',block:'center'});
+    },80);
+  }
 }
 
 function scrollToToday(){
@@ -1698,6 +1703,7 @@ let invoices = [];
 let recurring = [];
 let weekOffset = 0;
 let activeTagFilter = null;
+let _syncRender = false;
 
 
 async function loadInvoiceData(){
