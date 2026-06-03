@@ -214,6 +214,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f3;color:#1a
         <button class="icon-btn" onclick="openPanel('share')" title="共享"><i class="ti ti-share" style="font-size:14px"></i></button>
         <button class="icon-btn" onclick="openPanel('notif')" title="通知"><i class="ti ti-bell" style="font-size:14px"></i><span id="notif-badge" class="badge" style="display:none"></span></button>
       <button class="icon-btn" onclick="openTagManager()" title="顏色標籤設定"><i class="ti ti-tags" style="font-size:14px"></i></button>
+      <button class="icon-btn" onclick="openPanel('log')" title="編輯紀錄"><i class="ti ti-history" style="font-size:14px"></i></button>
         <button class="icon-btn" onclick="openPanel('remind')" title="提醒"><i class="ti ti-alarm" style="font-size:14px"></i></button>
       </div>
     </div>
@@ -262,6 +263,13 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f3;color:#1a
     <button class="panel-close" onclick="closeAllPanels()"><i class="ti ti-x"></i></button>
   </div>
   <div class="panel-body" id="share-body"></div>
+</div>
+<div class="panel" id="panel-log">
+  <div class="panel-header">
+    <h2><i class="ti ti-history" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>編輯紀錄</h2>
+    <button class="panel-close" onclick="closeAllPanels()"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="panel-body" id="log-body"><div class="empty-state">載入中...</div></div>
 </div>
 <div class="panel" id="panel-remind">
   <div class="panel-header"><h2><i class="ti ti-alarm" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>提醒管理</h2>
@@ -343,7 +351,7 @@ async function api(action, body={}) {
   try {
     setStatus('loading','同步中...');
     const res = await fetch(API_URL+'?action='+action+'&token='+encodeURIComponent(ACCESS_TOKEN)+'&_='+Date.now(), {
-      method:'POST', body:JSON.stringify({action,token:ACCESS_TOKEN,...body})
+      method:'POST', body:JSON.stringify({action,token:ACCESS_TOKEN,user:currentUser,...body})
     });
     const data = await res.json();
     if(data && data.code===401){setStatus('err','Token 錯誤');showToast('Token 錯誤，請確認');return null;}
@@ -1123,6 +1131,31 @@ function resetTagColors(){
   showToast('✓ 已還原為預設標籤');
 }
 
+async function renderLog(){
+  const body=document.getElementById('log-body');
+  body.innerHTML='<div class="empty-state">載入中...</div>';
+  const res=await api('getLog');
+  if(!res||!res.length){body.innerHTML='<div class="empty-state">尚無紀錄</div>';return;}
+  const actionColors={'新增任務':'#ECFDF5','更新任務':'#EFF6FF','刪除任務':'#FEF2F2','新增專案':'#F5F3FF','更新專案狀態':'#FFF7ED','新增請款':'#ECFDF5','更新請款狀態':'#FFF7ED'};
+  const actionIcons={'新增任務':'ti-plus','更新任務':'ti-edit','刪除任務':'ti-trash','新增專案':'ti-folder-plus','更新專案狀態':'ti-refresh','新增請款':'ti-receipt','更新請款狀態':'ti-cash'};
+  body.innerHTML=res.map(r=>{
+    const bg=actionColors[r.action]||'#f5f5f3';
+    const icon=actionIcons[r.action]||'ti-point';
+    const initials=(r.user||'?').slice(0,1);
+    return `<div style="display:flex;gap:10px;padding:10px 0;border-bottom:0.5px solid #f0f0ed;align-items:flex-start">
+      <div style="width:28px;height:28px;border-radius:50%;background:#E6F1FB;color:#185FA5;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">${initials}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+          <span style="font-size:11px;font-weight:500;color:#1a1a18">${r.user||'未知'}</span>
+          <span style="font-size:10px;padding:1px 6px;border-radius:8px;background:${bg};color:#444">${r.action}</span>
+        </div>
+        <div style="font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.detail||''}</div>
+        <div style="font-size:10px;color:#bbb;margin-top:2px">${r.time}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function filterByTag(tagId, el){
   activeTagFilter = tagId;
   const clearBtn=document.getElementById('legend-clear');
@@ -1584,6 +1617,7 @@ function openPanel(name){
   if(name==='notif')renderNotif();
   else if(name==='share')renderShare();
   else if(name==='remind')renderRemind();
+  else if(name==='log')renderLog();
 }
 function closeAllPanels(){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('open'));
