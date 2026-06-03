@@ -2,45 +2,10 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<script>
-(function(){
-  var VER = '20260602';
-  var url = new URL(location.href);
-  if(url.searchParams.get('v') !== VER){
-    url.searchParams.set('v', VER);
-    location.replace(url.toString());
-  }
-  // Also nuke any stale caches
-  if('caches' in window){
-    caches.keys().then(function(names){
-      names.forEach(function(n){ caches.delete(n); });
-    });
-  }
-})();
-</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>專案管理儀表板</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
-<meta charset="UTF-8">
-<script>
-(function(){
-  var VER = '20260602';
-  var url = new URL(location.href);
-  if(url.searchParams.get('v') !== VER){
-    url.searchParams.set('v', VER);
-    location.replace(url.toString());
-  }
-  // Also nuke any stale caches
-  if('caches' in window){
-    caches.keys().then(function(names){
-      names.forEach(function(n){ caches.delete(n); });
-    });
-  }
-})();
-</script>
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f3;color:#1a1a18}
@@ -329,17 +294,8 @@ function getTagColor(id){ return TAG_COLORS.find(t=>t.id===id)||TAG_COLORS.find(
 
 const APP_VERSION = '20260602';
 (function(){
-  var stored = localStorage.getItem('pm_version');
-  if(stored !== APP_VERSION){
-    var url = localStorage.getItem('pm_api_url')||'';
-    var tok = localStorage.getItem('pm_token')||'';
-    try{ localStorage.clear(); }catch(e){}
-    try{ sessionStorage.clear(); }catch(e){}
-    if(url) localStorage.setItem('pm_api_url', url);
-    if(tok) localStorage.setItem('pm_token', tok);
-    localStorage.setItem('pm_version', APP_VERSION);
-    console.log('[PM] Cache cleared for version', APP_VERSION);
-  }
+  // Never nuke localStorage — just mark version
+  localStorage.setItem('pm_version', APP_VERSION);
 })();
 let API_URL = localStorage.getItem('pm_api_url') || '';
 let ACCESS_TOKEN = localStorage.getItem('pm_token') || '';
@@ -402,20 +358,8 @@ async function api(action, body={}) {
 }
 
 function hardReload(){
-  try{ localStorage.removeItem('pm_version'); }catch(e){}
-  try{ sessionStorage.clear(); }catch(e){}
-  if('caches' in window){
-    caches.keys().then(function(names){
-      names.forEach(function(n){ caches.delete(n); });
-      var url=new URL(location.href);
-      url.searchParams.set('v', Date.now());
-      location.replace(url.toString());
-    });
-  } else {
-    var url=new URL(location.href);
-    url.searchParams.set('v', Date.now());
-    location.replace(url.toString());
-  }
+  // Just reload the page fresh without clearing user data
+  location.reload(true);
 }
 
 function saveApiUrl(){
