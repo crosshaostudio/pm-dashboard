@@ -296,6 +296,14 @@ const DEFAULT_TAG_COLORS = [
   { id:'none',         label:'無底色',                   bg:'transparent', border:'transparent', text:'#1a1a18' },
 ];
 let TAG_COLORS = loadTagColors();
+function initOwnerCollapseDefaults(){
+  // On first visit per user, collapse all owner sections except own
+  const key='pm_collapse_init_'+currentUser;
+  if(localStorage.getItem(key)) return;
+  localStorage.setItem(key,'1');
+  // Will be applied on next renderProjects naturally
+}
+
 function loadTagColors(){
   try{
     const saved=localStorage.getItem('pm_tag_colors');
@@ -319,6 +327,21 @@ setTimeout(()=>{ var ui=document.getElementById('api-url'); var ti=document.getE
 let projects=[], tasks=[], members=[], notifications=[], reminders=[];
 let currentUser = localStorage.getItem('pm_current_user') || '我';
 let activeOwnerFilter = null;
+
+// Collapsed state is stored per-user in localStorage — never synced to Sheets
+function getCollapsedOwners(){
+  try{ return JSON.parse(localStorage.getItem('pm_collapsed_'+currentUser)||'{}'); }catch(e){ return {}; }
+}
+function setOwnerCollapsed(owner, collapsed){
+  const state=getCollapsedOwners();
+  const key=owner.replace(/\s/g,'_');
+  if(collapsed) state[key]=true; else delete state[key];
+  localStorage.setItem('pm_collapsed_'+currentUser, JSON.stringify(state));
+}
+function isOwnerCollapsed(owner){
+  const state=getCollapsedOwners();
+  return !!state[owner.replace(/\s/g,'_')];
+}
 let activeProject=null, ganttFormOpen=false;
 
 const today=new Date(); today.setHours(0,0,0,0);
@@ -633,30 +656,69 @@ function renderProjects(){
     const section=document.createElement('div');
     section.className='owner-section';
 
+    const collapsed=isOwnerCollapsed(owner);
+    const ownerKey=owner.replace(/\s/g,'_');
+
     const header=document.createElement('div');
     header.className='owner-header'+(isFiltered?' active':'');
-    header.style.borderRadius='8px';
-    if(isFiltered) header.style.background='#f0f0ed';
-    header.innerHTML=`
-      <div class="owner-avatar" style="background:${owner==='未指派'?'#e5e5e0':''}; ${owner!=='未指派'?'background:'+color+'22;color:'+color:';color:#aaa'}">${initials}</div>
-      <span class="owner-name">${isMe?'我 ('+owner+')':owner}</span>
-      <span class="owner-count">${projs.length}</span>
-      <i class="ti ti-chevron-down owner-arrow" id="arrow-${owner.replace(/\s/g,'_')}"></i>`;
-    header.onclick=(e)=>{
+    header.style.cssText='display:flex;align-items:center;gap:6px;padding:6px 8px 3px;border-radius:8px;'+(isFiltered?'background:#f0f0ed':'');
+
+    // ── Collapse toggle (arrow only) ──
+    const arrowBtn=document.createElement('button');
+    arrowBtn.style.cssText='background:none;border:none;cursor:pointer;padding:2px;display:flex;align-items:center;color:#bbb;flex-shrink:0;border-radius:4px;transition:all .15s';
+    arrowBtn.innerHTML=`<i class="ti ${collapsed?'ti-chevron-right':'ti-chevron-down'}" style="font-size:11px"></i>`;
+    arrowBtn.title=collapsed?'展開':'收合';
+    arrowBtn.onclick=(e)=>{
       e.stopPropagation();
-      if(activeOwnerFilter===owner){
-        activeOwnerFilter=null;
-      } else {
-        activeOwnerFilter=owner;
-        activeProject=null;
+      const nowCollapsed=isOwnerCollapsed(owner);
+      setOwnerCollapsed(owner,!nowCollapsed);
+      const isNowCollapsed=!nowCollapsed;
+      // Toggle sidebar UI directly (no full re-render needed for sidebar)
+      const wrap=document.getElementById('owner-projs-'+ownerKey);
+      if(wrap){
+        wrap.style.display=isNowCollapsed?'none':'block';
+        arrowBtn.innerHTML=`<i class="ti ${isNowCollapsed?'ti-chevron-right':'ti-chevron-down'}" style="font-size:11px"></i>`;
+        arrowBtn.title=isNowCollapsed?'展開':'收合';
       }
+      // Also re-render gantt and invoice to reflect new collapse state
+      renderGantt();
+      if(document.getElementById('view-invoice').classList.contains('active')) renderInvoice();
+      renderDaily();
+    };
+
+    // ── Avatar ──
+    const av=document.createElement('div');
+    av.className='owner-avatar';
+    av.style.cssText=`background:${owner==='未指派'?'#e5e5e0':color+'22'};color:${owner==='未指派'?'#aaa':color}`;
+    av.textContent=initials;
+
+    // ── Name (clickable for filter) ──
+    const nameEl=document.createElement('span');
+    nameEl.className='owner-name';
+    nameEl.style.cssText='flex:1;cursor:pointer;font-size:11px;font-weight:500;color:#555';
+    nameEl.textContent=isMe?'我 ('+owner+')':owner;
+    nameEl.title='點擊篩選此負責人';
+    nameEl.onclick=(e)=>{
+      e.stopPropagation();
+      if(activeOwnerFilter===owner){ activeOwnerFilter=null; }
+      else{ activeOwnerFilter=owner; activeProject=null; }
       renderProjects();renderDaily();renderGantt();
     };
+
+    const countEl=document.createElement('span');
+    countEl.className='owner-count';
+    countEl.textContent=projs.length;
+
+    header.appendChild(arrowBtn);
+    header.appendChild(av);
+    header.appendChild(nameEl);
+    header.appendChild(countEl);
     section.appendChild(header);
 
     const projsWrap=document.createElement('div');
     projsWrap.className='owner-projects';
-    projsWrap.id='owner-projs-'+owner.replace(/\s/g,'_');
+    projsWrap.id='owner-projs-'+ownerKey;
+    projsWrap.style.display=collapsed?'none':'block';
 
   // Active projects
   projs.forEach(p=>{
@@ -842,8 +904,31 @@ async function startRename(proj, labelEl){
   input.onkeydown=e=>{if(e.key==='Enter')input.blur();if(e.key==='Escape'){proj.name=proj.name;renderProjects();}};
 }
 
+function getExpandedOwners(){
+  // Returns list of owner names whose sections are currently expanded
+  const collapsed=getCollapsedOwners();
+  const allOwners=[...new Set(projects.filter(p=>p.status!=='closed').map(p=>p.owner||'未指派'))];
+  return allOwners.filter(o=>!collapsed[o.replace(/\s/g,'_')]);
+}
+
+function filteredProjects(includeAll=false){
+  // Projects visible based on collapse state + activeOwnerFilter + activeProject
+  let base=projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
+  if(!includeAll){
+    const expanded=getExpandedOwners();
+    base=base.filter(p=>expanded.includes(p.owner||'未指派'));
+  }
+  if(activeOwnerFilter) base=base.filter(p=>(p.owner||'未指派')===activeOwnerFilter);
+  return base;
+}
+
 function filteredTasks(){
   let base=tasks;
+  const visibleProjIds=filteredProjects().map(p=>String(p.id));
+
+  // Respect collapse: only show tasks of expanded owner sections
+  base=base.filter(t=>visibleProjIds.includes(String(t.projId)));
+
   if(activeOwnerFilter){
     const ownerProjIds=projects.filter(p=>(p.owner||'未指派')===activeOwnerFilter&&p.status!=='closed').map(p=>String(p.id));
     base=base.filter(t=>ownerProjIds.includes(String(t.projId)));
@@ -1743,7 +1828,7 @@ function renderGantt(){
   }
   const ownerFilter=ownerSel?ownerSel.value:'';
 
-  // Filter tasks: respect activeProject, activeOwnerFilter, AND gantt owner filter
+  // Filter tasks: respect collapse state, activeProject, activeOwnerFilter, AND gantt owner filter
   let ganttTasks=filteredTasks().filter(t=>normDate(t.ganttStart)&&normDate(t.ganttEnd));
   if(ownerFilter){
     const ownerProjIds=projects.filter(p=>p.owner===ownerFilter).map(p=>String(p.id));
@@ -1934,7 +2019,12 @@ function renderInvoice(){
   const root = document.getElementById('invoice-root');
   if(!root) return;
 
-  const activeProjs = projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
+  // Respect left sidebar collapse state — show only expanded owners' projects
+  const allActiveProjs = projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
+  const expandedOwners = getExpandedOwners();
+  const activeProjs = activeOwnerFilter
+    ? allActiveProjs.filter(p=>(p.owner||'未指派')===activeOwnerFilter)
+    : allActiveProjs.filter(p=>expandedOwners.includes(p.owner||'未指派'));
   const closedProjs = projects.filter(p=>p.status==='closed');
 
   function makeInvCard(p, isClosed){
