@@ -342,7 +342,7 @@ setTimeout(()=>{ var ui=document.getElementById('api-url'); var ti=document.getE
 
 let projects=[], tasks=[], members=[], notifications=[], reminders=[];
 let currentUser = localStorage.getItem('pm_current_user') || '我';
-let currentRole = 'viewer'; // will be set after first successful API call
+let currentRole = 'owner'; // optimistic default; corrected after first API response
 let activeOwnerFilter = null;
 
 // Collapsed state is stored per-user in localStorage — never synced to Sheets
@@ -433,7 +433,10 @@ function saveApiUrl(){
 async function syncAll(){
   if(!API_URL){showToast('請輸入 Apps Script 網址');return;}
   setStatus('loading','載入中...');
-  // Note: column migration is now handled server-side inside updateTask/addTask
+  // Detect role via a lightweight getProjects call first
+  const roleCheck=await api('getProjects');
+  if(roleCheck&&roleCheck._role) currentRole=roleCheck._role;
+  applyRoleUI();
   const [t,p,m,n,r]=await Promise.all([
     api('getTasks'),api('getProjects'),api('getMembers'),api('getNotifs'),api('getReminders')
   ]);
@@ -578,9 +581,15 @@ function applyRoleUI(){
 
   // Hide gantt add button for viewers
   document.querySelectorAll('.g-btn.primary').forEach(btn=>{
-    if(btn.textContent.includes('新增任務')&&btn.onclick){
+    if(btn.textContent.includes('新增任務')){
       btn.style.display=isViewer?'none':'';
     }
+  });
+  // Ensure status selects are always interactive for editor and owner
+  document.querySelectorAll('.proj-status-select').forEach(sel=>{
+    sel.disabled=isViewer;
+    sel.style.pointerEvents=isViewer?'none':'';
+    sel.style.opacity=isViewer?'.6':'1';
   });
 
   // Disable all add-task inputs for viewers
