@@ -1,0 +1,2056 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<script>
+(function(){
+  var VER = '20260602';
+  var url = new URL(location.href);
+  if(url.searchParams.get('v') !== VER){
+    url.searchParams.set('v', VER);
+    location.replace(url.toString());
+  }
+  // Also nuke any stale caches
+  if('caches' in window){
+    caches.keys().then(function(names){
+      names.forEach(function(n){ caches.delete(n); });
+    });
+  }
+})();
+</script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>專案管理儀表板</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<meta charset="UTF-8">
+<script>
+(function(){
+  var VER = '20260602';
+  var url = new URL(location.href);
+  if(url.searchParams.get('v') !== VER){
+    url.searchParams.set('v', VER);
+    location.replace(url.toString());
+  }
+  // Also nuke any stale caches
+  if('caches' in window){
+    caches.keys().then(function(names){
+      names.forEach(function(n){ caches.delete(n); });
+    });
+  }
+})();
+</script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f3;color:#1a1a18}
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:220px;min-width:220px;background:#fff;border-right:0.5px solid #e5e5e0;display:flex;flex-direction:column}
+.sidebar-top{padding:14px;border-bottom:0.5px solid #e5e5e0}
+.sidebar-top h1{font-size:14px;font-weight:500}
+.sidebar-top p{font-size:11px;color:#888;margin-top:2px}
+.api-bar{display:flex;gap:6px;padding:10px 10px;border-bottom:0.5px solid #e5e5e0;align-items:center}
+.api-bar input{flex:1;font-size:10px;padding:4px 7px;border:0.5px solid #ccc;border-radius:6px;background:#fafaf8;outline:none;font-family:monospace}
+.api-bar button{padding:4px 8px;font-size:10px;border-radius:6px;border:0.5px solid #ccc;background:#fff;cursor:pointer}
+.api-bar button:hover{background:#f0f0ed}
+.api-status{display:flex;align-items:center;gap:5px;padding:6px 12px;font-size:10px;color:#888;border-bottom:0.5px solid #e5e5e0}
+.status-dot{width:6px;height:6px;border-radius:50%;background:#ccc}
+.status-dot.ok{background:#4FBE82}
+.status-dot.err{background:#E24B4A}
+.status-dot.loading{background:#EF9F27;animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.project-list{flex:1;overflow-y:auto;padding:8px}
+.proj-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;cursor:pointer;margin-bottom:2px;font-size:12px;color:#666;transition:all .15s}
+.proj-item:hover,.proj-item.active{background:#f0f0ed;color:#1a1a18}
+.proj-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.proj-count{font-size:10px;background:#f0f0ed;padding:1px 5px;border-radius:10px;margin-left:auto}
+.add-proj-btn{margin:8px;padding:7px 10px;border-radius:8px;border:0.5px dashed #ccc;background:none;font-size:12px;color:#888;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s}
+.add-proj-btn:hover{background:#f0f0ed;border-style:solid}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{display:flex;align-items:center;background:#fff;border-bottom:0.5px solid #e5e5e0;padding:0 14px;gap:0}
+.tab{padding:11px 13px;font-size:13px;color:#666;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.tab:hover{color:#1a1a18}
+.tab.active{color:#1a1a18;border-bottom-color:#1a1a18;font-weight:500}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:6px}
+.icon-btn{background:none;border:0.5px solid #e5e5e0;border-radius:8px;padding:5px 8px;cursor:pointer;font-size:15px;color:#666;position:relative;transition:all .15s;display:flex;align-items:center;gap:4px}
+.icon-btn:hover{background:#f0f0ed;color:#1a1a18}
+.badge{position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;background:#E24B4A;color:#fff;font-size:9px;font-weight:500;display:flex;align-items:center;justify-content:center;border:1.5px solid #fff}
+.view{flex:1;overflow:auto;padding:14px;display:none}
+.view.active{display:block}
+.day-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
+.day-card{background:#fff;border:0.5px solid #e5e5e0;border-radius:12px;overflow:hidden;min-height:180px}
+.day-card.today{border-color:#378ADD}
+.day-header{padding:9px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid #e5e5e0}
+.day-date{font-size:12px;font-weight:500}
+.today-badge{font-size:10px;background:#E6F1FB;color:#0C447C;padding:2px 6px;border-radius:10px;font-weight:500}
+.day-body{padding:7px;min-height:110px}
+.task-item{display:flex;align-items:flex-start;gap:7px;padding:5px 7px;border-radius:6px;margin-bottom:3px;cursor:pointer;transition:background .1s;border-left:3px solid transparent}
+.task-item:hover{filter:brightness(.97)}
+.tag-legend{display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px;background:#fff;border-radius:12px;border:0.5px solid #e5e5e0;margin-bottom:14px;align-items:center}
+.tag-legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#555;cursor:pointer;padding:3px 8px;border-radius:20px;border:1.5px solid transparent;transition:all .15s;user-select:none}
+.tag-legend-item:hover{border-color:#ccc}
+.tag-swatch{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.tag-picker-popup{display:flex;flex-direction:column;gap:2px}
+.tag-picker-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:11px;transition:background .1s}
+.tag-picker-row:hover{background:#f5f5f3}
+.tag-picker-swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0}
+.task-check{width:13px;height:13px;border-radius:50%;border:1.5px solid #ccc;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.task-check.done{border-color:transparent}
+.task-text{font-size:12px;line-height:1.4;flex:1}
+.task-text.done{text-decoration:line-through;color:#aaa}
+.task-proj{font-size:10px;color:#888;margin-top:1px}
+.task-actions{display:none;gap:3px}
+.task-item:hover .task-actions{display:flex}
+.task-action-btn{background:none;border:none;cursor:pointer;padding:2px;color:#aaa;border-radius:4px;font-size:13px;line-height:1}
+.task-action-btn:hover{background:#eee;color:#666}
+.add-task-input{width:100%;background:none;border:none;outline:none;font-size:12px;padding:5px 7px;color:#1a1a18;font-family:inherit}
+.add-task-input::placeholder{color:#bbb}
+.gantt-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.gantt-toolbar label{font-size:12px;color:#666}
+.gantt-toolbar select,.gantt-toolbar input[type=date]{font-size:12px;padding:5px 8px;border-radius:8px;border:0.5px solid #ddd;background:#fff}
+.g-btn{padding:5px 11px;font-size:12px;border-radius:8px;border:0.5px solid #ddd;background:#fff;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.g-btn:hover{background:#f0f0ed}
+.g-btn.primary{background:#1a1a18;color:#fff;border-color:#1a1a18}
+.g-btn.primary:hover{opacity:.85}
+.add-form{background:#fff;border:0.5px solid #ddd;border-radius:12px;padding:13px;margin-bottom:12px;display:none;gap:10px;flex-wrap:wrap}
+.add-form.open{display:flex}
+.form-group{display:flex;flex-direction:column;gap:4px;min-width:120px;flex:1}
+.form-group label{font-size:11px;color:#888}
+.form-group input,.form-group select{padding:5px 8px;border-radius:8px;border:0.5px solid #ddd;background:#fff;font-size:12px;font-family:inherit}
+.gantt-wrap{background:#fff;border:0.5px solid #e5e5e0;border-radius:12px;overflow:hidden}
+.gantt-scroll{overflow-x:auto}
+.gantt-head{display:flex;border-bottom:0.5px solid #e5e5e0}
+.gantt-label-col{width:190px;min-width:190px;padding:7px 12px;font-size:11px;font-weight:500;color:#888;border-right:0.5px solid #e5e5e0;flex-shrink:0}
+.gantt-day-head{text-align:center;font-size:10px;color:#888;padding:4px 0;border-right:0.5px solid #e5e5e0;font-weight:500;flex-shrink:0}
+.gantt-day-head.tc{background:#E6F1FB;color:#0C447C}
+.gantt-row{display:flex;border-bottom:0.5px solid #e5e5e0;align-items:center;min-height:34px}
+.gantt-row:last-child{border-bottom:none}
+.gantt-row-label{width:190px;min-width:190px;padding:5px 12px;font-size:12px;border-right:0.5px solid #e5e5e0;flex-shrink:0;display:flex;align-items:center;gap:6px}
+.gantt-timeline-row{flex:1;position:relative;height:34px;display:flex}
+.gantt-cell{border-right:0.5px solid #e5e5e0;height:100%;flex-shrink:0}
+.gantt-cell.tc{background:rgba(55,138,221,.05)}
+.gantt-bar{position:absolute;height:18px;top:8px;border-radius:4px;display:flex;align-items:center;padding:0 6px;font-size:10px;font-weight:500;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;z-index:1}
+.gantt-bar:hover{opacity:.82}
+.gantt-prog{position:absolute;left:0;top:0;height:100%;border-radius:4px;background:rgba(255,255,255,.25)}
+.panel{position:fixed;top:0;right:-360px;width:340px;max-width:92vw;height:100%;background:#fff;border-left:0.5px solid #ddd;display:flex;flex-direction:column;z-index:100;transition:right .22s ease;box-shadow:-4px 0 20px rgba(0,0,0,.08)}
+.panel.open{right:0}
+.panel-overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:99;display:none}
+.panel-overlay.open{display:block}
+.panel-header{padding:14px 16px;border-bottom:0.5px solid #e5e5e0;display:flex;align-items:center;justify-content:space-between}
+.panel-header h2{font-size:14px;font-weight:500}
+.panel-close{background:none;border:none;cursor:pointer;font-size:18px;color:#888;padding:2px;border-radius:4px}
+.panel-close:hover{color:#1a1a18}
+.panel-body{flex:1;overflow-y:auto;padding:14px 16px}
+.notif-item{display:flex;gap:10px;padding:10px 0;border-bottom:0.5px solid #e5e5e0;cursor:pointer}
+.notif-item:last-child{border-bottom:none}
+.notif-icon{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.notif-title{font-size:12px;line-height:1.4}
+.notif-time{font-size:10px;color:#aaa;margin-top:3px}
+.notif-unread{width:6px;height:6px;border-radius:50%;background:#378ADD;flex-shrink:0;margin-top:4px}
+.section-title{font-size:11px;font-weight:500;color:#888;margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px}
+.member-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:0.5px solid #e5e5e0}
+.member-row:last-child{border-bottom:none}
+.av{border-radius:50%;font-weight:500;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.role-badge{font-size:10px;padding:2px 7px;border-radius:10px}
+.remind-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:0.5px solid #e5e5e0}
+.remind-item:last-child{border-bottom:none}
+.remind-del{background:none;border:none;cursor:pointer;color:#aaa;font-size:14px;padding:2px;border-radius:4px;line-height:1}
+.remind-del:hover{color:#E24B4A;background:#FCEBEB}
+.remind-form{background:#f5f5f3;border-radius:8px;padding:10px;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.remind-form select,.remind-form input{padding:5px 8px;border-radius:8px;border:0.5px solid #ddd;background:#fff;font-size:12px;width:100%;font-family:inherit}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(60px);background:#1a1a18;color:#fff;padding:8px 16px;border-radius:8px;font-size:12px;white-space:nowrap;transition:transform .25s ease;z-index:300;pointer-events:none}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.empty-state{padding:28px;text-align:center;color:#bbb;font-size:13px}
+.loading-overlay{position:absolute;inset:0;background:rgba(255,255,255,.7);display:flex;align-items:center;justify-content:center;z-index:10;font-size:13px;color:#888}
+.inv-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:16px}
+.inv-card{background:#fff;border:0.5px solid #e5e5e0;border-radius:12px;padding:14px 16px}
+.inv-card-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.inv-card-name{font-size:13px;font-weight:500;flex:1}
+.inv-stat{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:0.5px solid #f0f0ed}
+.inv-stat:last-child{border-bottom:none;font-weight:500;font-size:13px;margin-top:4px}
+.inv-stat-label{color:#888}
+.inv-section{background:#fff;border:0.5px solid #e5e5e0;border-radius:12px;overflow:hidden;margin-bottom:14px}
+.inv-section-header{padding:11px 14px;border-bottom:0.5px solid #e5e5e0;display:flex;align-items:center;justify-content:space-between}
+.inv-section-title{font-size:13px;font-weight:500}
+.inv-row{display:grid;grid-template-columns:120px 1fr 100px 80px 80px;gap:8px;padding:9px 14px;border-bottom:0.5px solid #f0f0ed;align-items:center;font-size:12px}
+.inv-row:last-child{border-bottom:none}
+.inv-row:hover{background:#fafaf8}
+.inv-head{background:#f5f5f3;font-size:11px;color:#888;font-weight:500;padding:7px 14px}
+.paid-badge{font-size:10px;padding:2px 7px;border-radius:10px;cursor:pointer;white-space:nowrap}
+.paid-yes{background:#EAF3DE;color:#27500A}
+.paid-no{background:#FCEBEB;color:#791F1F}
+.rec-row{display:grid;grid-template-columns:80px 1fr 100px 80px 60px;gap:8px;padding:9px 14px;border-bottom:0.5px solid #f0f0ed;align-items:center;font-size:12px}
+.rec-row:last-child{border-bottom:none}
+.rec-row:hover{background:#fafaf8}
+.inv-add-form{display:none;padding:12px 14px;border-top:0.5px solid #e5e5e0;gap:8px;flex-wrap:wrap;background:#fafaf8}
+.inv-add-form.open{display:flex}
+
+.proj-status-badge{font-size:9px;padding:1px 5px;border-radius:8px;font-weight:500;white-space:nowrap;flex-shrink:0;cursor:pointer;border:none;outline:none;font-family:inherit}
+.proj-status-badge:hover{opacity:.8}
+.status-proposal{background:#EEF2FF;color:#3730A3}
+.status-pending{background:#FFF7ED;color:#92400E}
+.status-active{background:#ECFDF5;color:#065F46}
+.status-closed{background:#F1F5F9;color:#475569}
+.proj-status-select{font-size:10px;border:none;outline:none;border-radius:6px;padding:2px 4px;font-family:inherit;cursor:pointer;font-weight:500}
+
+.repeat-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center}
+.repeat-modal{background:#fff;border-radius:14px;padding:20px;width:340px;max-width:92vw;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.repeat-modal h3{font-size:14px;font-weight:500;margin-bottom:14px;color:#1a1a18}
+.repeat-option{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;margin-bottom:4px;border:1.5px solid #e5e5e0;transition:all .15s}
+.repeat-option:hover{border-color:#378ADD;background:#f0f6ff}
+.repeat-option.selected{border-color:#378ADD;background:#E6F1FB}
+.repeat-option-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.repeat-badge{font-size:9px;padding:1px 5px;border-radius:8px;background:#E6F1FB;color:#0C447C;font-weight:500;margin-left:auto}
+
+.tag-mgr-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:300;display:flex;align-items:center;justify-content:center}
+.tag-mgr-modal{background:#fff;border-radius:14px;padding:20px;width:480px;max-width:95vw;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.tag-mgr-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid #f0f0ed}
+.tag-mgr-row:last-child{border-bottom:none}
+.color-swatch-btn{width:28px;height:28px;border-radius:6px;border:1.5px solid #ddd;cursor:pointer;flex-shrink:0;position:relative}
+.color-swatch-btn input[type=color]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;border:none;padding:0}
+
+.owner-section{margin-bottom:2px}
+.owner-header{display:flex;align-items:center;gap:6px;padding:6px 10px 3px;cursor:pointer;user-select:none}
+.owner-header:hover{background:#f5f5f3;border-radius:6px}
+.owner-avatar{width:20px;height:20px;border-radius:50%;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.owner-name{font-size:11px;font-weight:500;color:#555;flex:1}
+.owner-count{font-size:10px;color:#aaa}
+.owner-arrow{font-size:10px;color:#bbb;transition:transform .15s}
+.owner-projects{overflow:hidden;transition:max-height .2s ease}
+.proj-owner-badge{font-size:9px;color:#aaa;padding:0 6px;border-radius:8px;background:#f0f0ed;white-space:nowrap;flex-shrink:0;display:none}
+.proj-item:hover .proj-owner-badge{display:block}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-top">
+      <h1>專案管理儀表板</h1>
+      <p id="today-str"></p>
+    </div>
+    <div class="api-bar" style="flex-direction:column;gap:5px">
+      <input type="text" id="api-url" placeholder="Apps Script 網址..." value="">
+      <div style="display:flex;gap:5px"><input type="password" id="api-token" placeholder="Access Token..." style="flex:1;font-size:10px;padding:4px 7px;border:0.5px solid #ccc;border-radius:6px;background:#fafaf8;outline:none;font-family:monospace"><button onclick="saveApiUrl()">連線</button>
+        <button onclick="hardReload()" title="清除快取重新載入" style="padding:4px 6px;font-size:10px;border-radius:6px;border:0.5px solid #ccc;background:#fff;cursor:pointer;color:#888">↺</button>
+      </div>
+    </div>
+    <div class="api-status"><div class="status-dot" id="status-dot"></div><span id="status-label">未連線</span></div>
+    <div class="project-list" id="project-list"></div>
+    <button class="add-proj-btn" onclick="addProject()"><i class="ti ti-plus" style="font-size:13px"></i> 新增專案</button>
+  </div>
+
+  <div class="main" style="position:relative">
+    <div class="topbar">
+      <div class="tab active" onclick="switchTab('daily',this)"><i class="ti ti-calendar"></i> 每日待辦</div>
+      <div class="tab" onclick="switchTab('gantt',this)"><i class="ti ti-chart-gantt"></i> 甘特圖</div>
+      <div class="tab" onclick="switchTab('invoice',this)"><i class="ti ti-receipt"></i> 請款日</div>
+      <div class="topbar-right" id="topbar-right">
+        <button class="icon-btn" onclick="syncAll()" title="同步"><i class="ti ti-cloud-upload" style="font-size:14px"></i><span style="font-size:11px">同步</span></button>
+        <button class="icon-btn" onclick="openPanel('share')" title="共享"><i class="ti ti-share" style="font-size:14px"></i></button>
+        <button class="icon-btn" onclick="openPanel('notif')" title="通知"><i class="ti ti-bell" style="font-size:14px"></i><span id="notif-badge" class="badge" style="display:none"></span></button>
+      <button class="icon-btn" onclick="openTagManager()" title="顏色標籤設定"><i class="ti ti-tags" style="font-size:14px"></i></button>
+        <button class="icon-btn" onclick="openPanel('remind')" title="提醒"><i class="ti ti-alarm" style="font-size:14px"></i></button>
+      </div>
+    </div>
+
+    <div class="view active" id="view-daily"></div>
+    <div class="view" id="view-gantt">
+      <div class="gantt-toolbar">
+        <button class="g-btn primary" onclick="toggleAddForm()"><i class="ti ti-plus"></i> 新增任務</button>
+        <label>檢視</label>
+        <select id="gantt-scale" onchange="renderGantt()">
+          <option value="week">週視圖 (14天)</option>
+          <option value="month">月視圖 (30天)</option>
+          <option value="quarter">季視圖 (90天)</option>
+        </select>
+        <label>起始日</label>
+        <input type="date" id="gantt-start" onchange="renderGantt()">
+      </div>
+      <div class="add-form" id="gantt-add-form">
+        <div class="form-group"><label>任務名稱</label><input type="text" id="f-name" placeholder="任務名稱"></div>
+        <div class="form-group"><label>開始日期</label><input type="date" id="f-start"></div>
+        <div class="form-group"><label>結束日期</label><input type="date" id="f-end"></div>
+        <div class="form-group"><label>專案</label><select id="f-proj"></select></div>
+        <div class="form-group"><label>進度 (<span id="f-prog-v">0</span>%)</label>
+          <input type="range" id="f-prog" min="0" max="100" value="0" step="1" oninput="document.getElementById('f-prog-v').textContent=this.value">
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end;width:100%">
+          <button class="g-btn primary" onclick="addGanttTask()" style="flex:1">新增</button>
+          <button class="g-btn" onclick="toggleAddForm()">取消</button>
+        </div>
+      </div>
+      <div class="gantt-wrap"><div class="gantt-scroll"><div id="gantt-container"></div></div></div>
+    </div>
+    <div class="view" id="view-invoice"><div id="invoice-root" style="padding:2px"></div></div>
+  </div>
+</div>
+
+<div class="panel-overlay" id="overlay" onclick="closeAllPanels()"></div>
+<div class="panel" id="panel-notif">
+  <div class="panel-header"><h2><i class="ti ti-bell" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>通知中心</h2>
+    <div style="display:flex;gap:6px"><button class="g-btn" style="font-size:11px;padding:3px 8px" onclick="markAllRead()">全部已讀</button><button class="panel-close" onclick="closeAllPanels()"><i class="ti ti-x"></i></button></div>
+  </div>
+  <div class="panel-body" id="notif-body"></div>
+</div>
+<div class="panel" id="panel-share">
+  <div class="panel-header"><h2><i class="ti ti-cloud" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>雲端共享</h2>
+    <button class="panel-close" onclick="closeAllPanels()"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="panel-body" id="share-body"></div>
+</div>
+<div class="panel" id="panel-remind">
+  <div class="panel-header"><h2><i class="ti ti-alarm" style="font-size:14px;vertical-align:-2px;margin-right:5px"></i>提醒管理</h2>
+    <button class="panel-close" onclick="closeAllPanels()"><i class="ti ti-x"></i></button>
+  </div>
+  <div class="panel-body" id="remind-body"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const COLORS=['#4F7BE9','#E9664F','#4FBE82','#C24FE9','#E9BE4F','#4FBEE9','#E94F99'];
+
+const DEFAULT_TAG_COLORS = [
+  { id:'yellow-light', label:'上刊／次重要／追客戶媒體', bg:'#FFFBCC', border:'#E6D94F', text:'#7A6E00' },
+  { id:'yellow-deep',  label:'報表／當天必做',            bg:'#FFE680', border:'#CCA800', text:'#5C4A00' },
+  { id:'green-light',  label:'時間相關（會議、外出等）',  bg:'#D6F5DC', border:'#52B76A', text:'#1A5C2A' },
+  { id:'black',        label:'大型專案／提案追蹤',        bg:'#1a1a18', border:'#1a1a18', text:'#ffffff' },
+  { id:'none',         label:'無底色',                   bg:'transparent', border:'transparent', text:'#1a1a18' },
+];
+let TAG_COLORS = loadTagColors();
+function loadTagColors(){
+  try{
+    const saved=localStorage.getItem('pm_tag_colors');
+    if(saved){ const parsed=JSON.parse(saved); if(Array.isArray(parsed)&&parsed.length) return parsed; }
+  }catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT_TAG_COLORS));
+}
+function saveTagColors(){ localStorage.setItem('pm_tag_colors',JSON.stringify(TAG_COLORS)); }
+function getTagColor(id){ return TAG_COLORS.find(t=>t.id===id)||TAG_COLORS.find(t=>t.id==='none')||{id:'none',label:'無底色',bg:'transparent',border:'transparent',text:'#1a1a18'}; }
+
+const APP_VERSION = '20260602';
+(function(){
+  var stored = localStorage.getItem('pm_version');
+  if(stored !== APP_VERSION){
+    var url = localStorage.getItem('pm_api_url')||'';
+    var tok = localStorage.getItem('pm_token')||'';
+    try{ localStorage.clear(); }catch(e){}
+    try{ sessionStorage.clear(); }catch(e){}
+    if(url) localStorage.setItem('pm_api_url', url);
+    if(tok) localStorage.setItem('pm_token', tok);
+    localStorage.setItem('pm_version', APP_VERSION);
+    console.log('[PM] Cache cleared for version', APP_VERSION);
+  }
+})();
+let API_URL = localStorage.getItem('pm_api_url') || '';
+let ACCESS_TOKEN = localStorage.getItem('pm_token') || '';
+if (API_URL) document.getElementById('api-url').value = API_URL;
+setTimeout(()=>{ var ui=document.getElementById('api-url'); var ti=document.getElementById('api-token'); if(ui&&API_URL)ui.value=API_URL; if(ti&&ACCESS_TOKEN)ti.value=ACCESS_TOKEN; },50);
+
+let projects=[], tasks=[], members=[], notifications=[], reminders=[];
+let currentUser = localStorage.getItem('pm_current_user') || '我';
+let activeOwnerFilter = null;
+let activeProject=null, ganttFormOpen=false;
+
+const today=new Date(); today.setHours(0,0,0,0);
+function fmtDate(d){return d.toISOString().slice(0,10)}
+function dateOf(s){const d=new Date(s);d.setHours(0,0,0,0);return d}
+function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r}
+function normDate(v){
+  if(!v) return '';
+  if(v instanceof Date){
+    const y=v.getFullYear(),m=String(v.getMonth()+1).padStart(2,'0'),d=String(v.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+d;
+  }
+  const s=String(v).trim();
+  // Sheets Date serial (number)
+  if(/^\d+$/.test(s)){
+    const d=new Date((parseInt(s)-25569)*86400000);
+    return normDate(d);
+  }
+  // ISO with time part: 2026-06-01T00:00:00 or 2026-06-01T16:00:00.000Z
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  return s;
+}
+document.getElementById('today-str').textContent=today.toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
+document.getElementById('gantt-start').value=fmtDate(addDays(today,-3));
+
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
+
+function setStatus(state, label){
+  const dot=document.getElementById('status-dot'), lbl=document.getElementById('status-label');
+  dot.className='status-dot'+(state?' '+state:''); lbl.textContent=label;
+}
+
+async function api(action, body={}) {
+  if(!API_URL) { showToast('請先貼上 Apps Script 網址並連線'); return null; }
+  try {
+    setStatus('loading','同步中...');
+    const res = await fetch(API_URL+'?action='+action+'&token='+encodeURIComponent(ACCESS_TOKEN)+'&_='+Date.now(), {
+      method:'POST', body:JSON.stringify({action,token:ACCESS_TOKEN,...body})
+    });
+    const data = await res.json();
+    if(data && data.code===401){setStatus('err','Token 錯誤');showToast('Token 錯誤，請確認');return null;}
+    if(data && data.error){console.warn('[API error]', action, data.error);}
+    setStatus('ok','已連線');
+    return data;
+  } catch(e) {
+    setStatus('err','連線失敗');
+    showToast('連線失敗：'+e.message);
+    return null;
+  }
+}
+
+function hardReload(){
+  try{ localStorage.removeItem('pm_version'); }catch(e){}
+  try{ sessionStorage.clear(); }catch(e){}
+  if('caches' in window){
+    caches.keys().then(function(names){
+      names.forEach(function(n){ caches.delete(n); });
+      var url=new URL(location.href);
+      url.searchParams.set('v', Date.now());
+      location.replace(url.toString());
+    });
+  } else {
+    var url=new URL(location.href);
+    url.searchParams.set('v', Date.now());
+    location.replace(url.toString());
+  }
+}
+
+function saveApiUrl(){
+  API_URL = document.getElementById('api-url').value.trim();
+  ACCESS_TOKEN = document.getElementById('api-token').value.trim();
+  localStorage.setItem('pm_api_url', API_URL);
+  localStorage.setItem('pm_token', ACCESS_TOKEN);
+  syncAll();
+}
+
+async function syncAll(){
+  if(!API_URL){showToast('請輸入 Apps Script 網址');return;}
+  setStatus('loading','載入中...');
+  // Note: column migration is now handled server-side inside updateTask/addTask
+  const [t,p,m,n,r]=await Promise.all([
+    api('getTasks'),api('getProjects'),api('getMembers'),api('getNotifs'),api('getReminders')
+  ]);
+  if(t) tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),date:normDate(x.date),ganttStart:normDate(x.ganttStart),ganttEnd:normDate(x.ganttEnd),tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',repeatRule:x.repeatRule||''})); if(p) projects=p.map(x=>({...x,id:String(x.id),status:x.status||'proposal',owner:x.owner||''})); if(m) members=m;
+  if(n) notifications=n; if(r) reminders=r;
+
+  if(!projects.length){
+    await api('init');
+    await syncAll(); return;
+  }
+  await loadInvoiceData();
+  renderProjects(); renderDaily(); renderGantt(); updateBadge();
+  showToast('✓ 已從 Google Sheets 同步');
+}
+
+function updateBadge(){
+  const cnt=notifications.filter(n=>String(n.read)==='false'||n.read===false).length;
+  const b=document.getElementById('notif-badge');
+  b.textContent=cnt; b.style.display=cnt?'flex':'none';
+}
+
+
+const PROJ_STATUSES = [
+  {value:'proposal', label:'提案中', cls:'status-proposal', bg:'#EEF2FF', color:'#3730A3'},
+  {value:'pending',  label:'待簽約', cls:'status-pending',  bg:'#FFF7ED', color:'#92400E'},
+  {value:'active',   label:'執行中', cls:'status-active',   bg:'#ECFDF5', color:'#065F46'},
+  {value:'closed',   label:'結案',   cls:'status-closed',   bg:'#F1F5F9', color:'#475569'},
+];
+
+function getStatusInfo(val){
+  return PROJ_STATUSES.find(s=>s.value===val) || PROJ_STATUSES[0];
+}
+
+function isProjectFullyPaid(projId){
+  const projInvs = invoices.filter(i=>String(i.projId)===String(projId));
+  if(!projInvs.length) return false; // no invoices = not done
+  return projInvs.every(i=>String(i.paid)==='true'||i.paid===true);
+}
+
+async function setProjectStatus(projId, newStatus, e){
+  if(e) e.stopPropagation();
+  const p=projects.find(x=>String(x.id)===String(projId)); if(!p) return;
+
+  // Guard: closing requires full payment
+  if(newStatus==='closed'){
+    if(!isProjectFullyPaid(projId)){
+      showToast('請款完才算結案唷 💰');
+      // Reset the select back to previous value
+      const sel=document.getElementById('status-sel-'+projId);
+      if(sel) sel.value = p.status||'proposal';
+      return;
+    }
+  }
+
+  const prev=p.status;
+  p.status=newStatus;
+
+  if(newStatus==='closed'){
+    // Closing: re-render immediately (moves to closed section)
+    renderProjects(); renderInvoice();
+    const res=await api('closeProject',{id:String(projId),status:'closed'});
+    if(!res||res.error){
+      p.status=prev;renderProjects();showToast('❌ 操作失敗');
+    } else {
+      if(activeProject===projId){activeProject=null;renderDaily();renderGantt();}
+      showToast('✓ 已結案並移至結案區');
+    }
+  } else if(prev==='closed'){
+    // Re-opening from closed section
+    renderProjects(); renderInvoice();
+    const res=await api('closeProject',{id:String(projId),status:newStatus});
+    if(!res||res.error){p.status=prev;renderProjects();showToast('❌ 操作失敗');}
+    else{showToast('✓ 專案已重新開啟：'+getStatusInfo(newStatus).label);}
+  } else {
+    // Normal status change (proposal→pending→active etc.)
+    // Only update the select colour — no full re-render needed
+    const si=getStatusInfo(newStatus);
+    const sel=document.getElementById('status-sel-'+projId);
+    if(sel){sel.style.background=si.bg;sel.style.color=si.color;}
+    const res=await api('closeProject',{id:String(projId),status:newStatus});
+    if(!res||res.error){
+      p.status=prev;
+      const psi=getStatusInfo(prev);
+      if(sel){sel.value=prev;sel.style.background=psi.bg;sel.style.color=psi.color;}
+      showToast('❌ '+(res&&res.error?res.error:'操作失敗'));
+    } else {
+      showToast('✓ 狀態已更新：'+si.label);
+    }
+  }
+}
+
+let dragSrcId = null;
+
+function editMyName(e){
+  e.stopPropagation();
+  const name=prompt('輸入你的名字（讓其他人認識你）：', currentUser);
+  if(!name||!name.trim()) return;
+  currentUser=name.trim();
+  localStorage.setItem('pm_current_user', currentUser);
+  renderProjects();
+  showToast('✓ 名字已更新：'+currentUser);
+}
+
+function openOwnerPicker(projId, e){
+  e.stopPropagation();
+  document.querySelectorAll('.owner-picker-popup').forEach(p=>p.remove());
+  const p=projects.find(x=>String(x.id)===String(projId));if(!p)return;
+
+  // Collect all known owners from existing projects + currentUser
+  const knownOwners=[...new Set([currentUser,...projects.map(x=>x.owner||'').filter(Boolean)])];
+
+  const popup=document.createElement('div');
+  popup.className='owner-picker-popup';
+  popup.style.cssText='position:fixed;z-index:1000;background:#fff;border:0.5px solid #ddd;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:6px;min-width:160px;';
+
+  // Option: unassigned
+  const noneRow=document.createElement('div');
+  noneRow.className='tag-picker-row';
+  noneRow.innerHTML=`<div style="width:20px;height:20px;border-radius:50%;background:#f0f0ed;display:flex;align-items:center;justify-content:center;font-size:10px;color:#aaa">？</div><span style="flex:1;font-size:12px">未指派</span>${(!p.owner||p.owner==='未指派')?'<i class="ti ti-check" style="font-size:10px;color:#378ADD"></i>':''}`;
+  noneRow.onclick=async ev=>{ev.stopPropagation();popup.remove();await setProjectOwner(projId,'');};
+  popup.appendChild(noneRow);
+
+  knownOwners.forEach(owner=>{
+    const row=document.createElement('div');
+    row.className='tag-picker-row';
+    const isCurrent=p.owner===owner;
+    const isMe=owner===currentUser;
+    row.innerHTML=`<div style="width:20px;height:20px;border-radius:50%;background:#E6F1FB;color:#185FA5;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">${owner.slice(0,1)}</div>
+      <span style="flex:1;font-size:12px">${isMe?owner+' (我)':owner}</span>
+      ${isCurrent?'<i class="ti ti-check" style="font-size:10px;color:#378ADD"></i>':''}`;
+    row.onclick=async ev=>{ev.stopPropagation();popup.remove();await setProjectOwner(projId,owner);};
+    popup.appendChild(row);
+  });
+
+  // Add custom name option
+  const customRow=document.createElement('div');
+  customRow.className='tag-picker-row';
+  customRow.innerHTML=`<div style="width:20px;height:20px;border-radius:50%;background:#f0f0ed;display:flex;align-items:center;justify-content:center;font-size:12px">＋</div><span style="font-size:12px;color:#666">輸入名字...</span>`;
+  customRow.onclick=async ev=>{
+    ev.stopPropagation();popup.remove();
+    const name=prompt('輸入負責人名字：','');
+    if(name&&name.trim()) await setProjectOwner(projId,name.trim());
+  };
+  popup.appendChild(customRow);
+  document.body.appendChild(popup);
+
+  const btn=e.target.closest('button')||e.target;
+  const rect=btn.getBoundingClientRect();
+  let left=rect.left, top=rect.bottom+4;
+  if(left+180>window.innerWidth-8) left=Math.max(8,rect.right-180);
+  if(top+200>window.innerHeight-8) top=Math.max(8,rect.top-200-4);
+  popup.style.left=left+'px'; popup.style.top=top+'px';
+
+  const close=()=>{popup.remove();document.removeEventListener('click',close);};
+  setTimeout(()=>document.addEventListener('click',close),0);
+}
+
+async function setProjectOwner(projId, owner){
+  const p=projects.find(x=>String(x.id)===String(projId));if(!p)return;
+  const prev=p.owner||'';
+  p.owner=owner;
+  renderProjects();
+  const res=await api('updateProject',{id:String(projId),owner});
+  if(!res||res.error){p.owner=prev;renderProjects();showToast('❌ 更新失敗');}
+  else{showToast('✓ 負責人已更新：'+(owner||'未指派'));}
+}
+
+function renderProjects(){
+  const list=document.getElementById('project-list');list.innerHTML='';
+
+  // Update my name display
+  const myNameEl=document.getElementById('my-name');
+  const myAvEl=document.getElementById('my-avatar');
+  if(myNameEl) myNameEl.textContent=currentUser;
+  if(myAvEl) myAvEl.textContent=currentUser.slice(0,1);
+
+  const activeProjs=projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
+  const closedProjs=projects.filter(p=>p.status==='closed');
+
+  // All projects row
+  const all=document.createElement('div');
+  all.className='proj-item'+(activeProject===null&&!activeOwnerFilter?' active':'');
+  all.onclick=()=>{activeProject=null;activeOwnerFilter=null;renderProjects();renderDaily();renderGantt();};
+  all.innerHTML=`<div class="proj-dot" style="background:#888"></div><span style="flex:1">所有專案</span><span class="proj-count">${tasks.length}</span>`;
+  list.appendChild(all);
+
+  // Group by owner
+  const ownerMap={};
+  activeProjs.forEach(p=>{
+    const owner=p.owner||'未指派';
+    if(!ownerMap[owner]) ownerMap[owner]=[];
+    ownerMap[owner].push(p);
+  });
+
+  // Sort: currentUser first, then alphabetical, unassigned last
+  const ownerKeys=Object.keys(ownerMap).sort((a,b)=>{
+    if(a===currentUser) return -1;
+    if(b===currentUser) return 1;
+    if(a==='未指派') return 1;
+    if(b==='未指派') return -1;
+    return a.localeCompare(b,'zh-TW');
+  });
+
+  // Palette for owner avatars
+  const ownerColors=['#4F7BE9','#E9664F','#4FBE82','#C24FE9','#E9BE4F','#4FBEE9'];
+  const ownerColorMap={};
+  ownerKeys.forEach((k,i)=>{ ownerColorMap[k]=ownerColors[i%ownerColors.length]; });
+
+  ownerKeys.forEach(owner=>{
+    const projs=ownerMap[owner];
+    const isMe=owner===currentUser;
+    const isFiltered=activeOwnerFilter===owner;
+    const color=ownerColorMap[owner];
+    const initials=owner==='未指派'?'？':owner.slice(0,1);
+
+    // Owner section header
+    const section=document.createElement('div');
+    section.className='owner-section';
+
+    const header=document.createElement('div');
+    header.className='owner-header'+(isFiltered?' active':'');
+    header.style.borderRadius='8px';
+    if(isFiltered) header.style.background='#f0f0ed';
+    header.innerHTML=`
+      <div class="owner-avatar" style="background:${owner==='未指派'?'#e5e5e0':''}; ${owner!=='未指派'?'background:'+color+'22;color:'+color:';color:#aaa'}">${initials}</div>
+      <span class="owner-name">${isMe?'我 ('+owner+')':owner}</span>
+      <span class="owner-count">${projs.length}</span>
+      <i class="ti ti-chevron-down owner-arrow" id="arrow-${owner.replace(/\s/g,'_')}"></i>`;
+    header.onclick=(e)=>{
+      e.stopPropagation();
+      if(activeOwnerFilter===owner){
+        activeOwnerFilter=null;
+      } else {
+        activeOwnerFilter=owner;
+        activeProject=null;
+      }
+      renderProjects();renderDaily();renderGantt();
+    };
+    section.appendChild(header);
+
+    const projsWrap=document.createElement('div');
+    projsWrap.className='owner-projects';
+    projsWrap.id='owner-projs-'+owner.replace(/\s/g,'_');
+
+  // Active projects
+  projs.forEach(p=>{
+    const cnt=tasks.filter(t=>String(t.projId)===String(p.id)).length;
+    const si=getStatusInfo(p.status||'proposal');
+    const el=document.createElement('div');
+    el.className='proj-item'+(String(activeProject)===String(p.id)?' active':'');
+    el.draggable=true; el.dataset.id=String(p.id); el.style.position='relative';
+    el.style.flexWrap='wrap'; el.style.gap='0';
+
+    // ── Row 1: drag + dot + name + count/actions ──
+    const row1=document.createElement('div');
+    row1.style.cssText='display:flex;align-items:center;gap:6px;width:100%';
+
+    const dragHandle=document.createElement('i');
+    dragHandle.className='ti ti-grip-vertical';
+    dragHandle.style.cssText='font-size:11px;color:#ccc;flex-shrink:0;cursor:grab';
+    dragHandle.title='拖曳排序';
+
+    const dot=document.createElement('div');
+    dot.className='proj-dot'; dot.style.background=p.color;
+
+    const nameSpan=document.createElement('span');
+    nameSpan.className='proj-name-label';
+    nameSpan.style.cssText='flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;min-width:0';
+    nameSpan.title='雙擊修改名稱'; nameSpan.textContent=p.name;
+    nameSpan.ondblclick=ev=>{ev.stopPropagation();startRename(p,nameSpan);};
+
+    const count=document.createElement('span');
+    count.className='proj-count'; count.textContent=cnt;
+
+    const actions=document.createElement('div');
+    actions.className='proj-actions';
+    actions.style.cssText='display:none;gap:2px;align-items:center;flex-shrink:0';
+    actions.innerHTML=`
+      <button class="task-action-btn" title="指派負責人" onclick="openOwnerPicker('${p.id}',event)" style="font-size:12px"><i class="ti ti-user-circle" aria-hidden="true"></i></button>
+      <button class="task-action-btn" title="刪除專案" onclick="deleteProjectById('${p.id}',event)" style="font-size:12px;color:#E24B4A"><i class="ti ti-trash" aria-hidden="true"></i></button>`;
+
+    el.onmouseenter=()=>{ actions.style.display='flex'; count.style.display='none'; };
+    el.onmouseleave=()=>{ actions.style.display='none'; count.style.display=''; };
+
+    row1.appendChild(dragHandle); row1.appendChild(dot); row1.appendChild(nameSpan);
+    row1.appendChild(count); row1.appendChild(actions);
+
+    // ── Row 2: status selector ──
+    const row2=document.createElement('div');
+    row2.style.cssText='display:flex;align-items:center;padding:2px 0 4px 18px;width:100%';
+
+    const sel=document.createElement('select');
+    sel.id='status-sel-'+p.id;
+    sel.className='proj-status-select';
+    sel.style.cssText=`background:${si.bg};color:${si.color};font-size:10px;border:none;outline:none;border-radius:6px;padding:2px 6px;font-family:inherit;cursor:pointer;font-weight:500`;
+    PROJ_STATUSES.forEach(s=>{
+      const opt=document.createElement('option');
+      opt.value=s.value; opt.textContent=s.label;
+      if((p.status||'proposal')===s.value) opt.selected=true;
+      sel.appendChild(opt);
+    });
+    sel.onchange=async ev=>{
+      ev.stopPropagation();
+      const newVal=sel.value;
+      // update select colour immediately for feedback
+      const newSi=getStatusInfo(newVal);
+      sel.style.background=newSi.bg; sel.style.color=newSi.color;
+      await setProjectStatus(p.id, newVal, ev);
+    };
+    sel.onclick=ev=>ev.stopPropagation();
+    row2.appendChild(sel);
+
+    el.appendChild(row1); el.appendChild(row2);
+
+    el.onclick=(e)=>{
+      if(e.target.closest('.proj-actions')||e.target.classList.contains('proj-name-label')||e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+      activeProject=p.id; renderProjects(); renderDaily(); renderGantt();
+    };
+
+    // Drag handlers
+    el.ondragstart=e=>{if(e.target.tagName==='SELECT')return;dragSrcId=String(p.id);e.dataTransfer.effectAllowed='move';el.style.opacity='.45';};
+    el.ondragend=()=>{el.style.opacity='';document.querySelectorAll('.proj-item').forEach(x=>x.style.borderTop='');};
+    el.ondragover=e=>{e.preventDefault();document.querySelectorAll('.proj-item[data-id]').forEach(x=>x.style.borderTop='');if(String(p.id)!==dragSrcId)el.style.borderTop='2px solid #378ADD';};
+    el.ondragleave=()=>{el.style.borderTop='';};
+    el.ondrop=async e=>{
+      e.preventDefault();el.style.borderTop='';
+      if(!dragSrcId||dragSrcId===String(p.id))return;
+      const fromIdx=projects.findIndex(x=>String(x.id)===dragSrcId);
+      const toIdx=projects.findIndex(x=>String(x.id)===String(p.id));
+      if(fromIdx<0||toIdx<0)return;
+      const [moved]=projects.splice(fromIdx,1);projects.splice(toIdx,0,moved);
+      renderProjects();renderDaily();renderGantt();
+      await api('reorderProjects',{ids:projects.map(x=>x.id)});
+      showToast('✓ 排序已同步');dragSrcId=null;
+    };
+    projsWrap.appendChild(el);
+  });
+
+    section.appendChild(projsWrap);
+    list.appendChild(section);
+  });
+
+  // Closed projects section
+  if(closedProjs.length){
+    const divider=document.createElement('div');
+    divider.style.cssText='font-size:10px;color:#aaa;padding:8px 10px 4px;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none';
+    const arrow=document.createElement('i');
+    arrow.className='ti ti-chevron-right';
+    arrow.id='closed-arrow';
+    arrow.style.cssText='font-size:10px;transition:transform .15s';
+    divider.appendChild(arrow);
+    divider.appendChild(document.createTextNode(' 結案專案 ('+closedProjs.length+')'));
+    divider.onclick=()=>{
+      const sec=document.getElementById('closed-section');
+      const isOpen=sec.style.display!=='none';
+      sec.style.display=isOpen?'none':'block';
+      arrow.style.transform=isOpen?'':'rotate(90deg)';
+    };
+    list.appendChild(divider);
+
+    const closedSection=document.createElement('div');
+    closedSection.id='closed-section';
+    closedSection.style.display='none';
+    closedProjs.forEach(p=>{
+      const el=document.createElement('div');
+      el.className='proj-item'+(String(activeProject)===String(p.id)?' active':'');
+      el.style.opacity='.6';
+      el.onmouseenter=()=>{el.style.opacity='1';reopenBtn.style.display='flex';};
+      el.onmouseleave=()=>{el.style.opacity='.6';reopenBtn.style.display='none';};
+      const dot=document.createElement('div');
+      dot.className='proj-dot';dot.style.background=p.color;
+      const name=document.createElement('span');
+      name.style.cssText='flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:line-through;';
+      name.textContent=p.name;
+      const reopenBtn=document.createElement('div');
+      reopenBtn.style.cssText='display:none;gap:2px;align-items:center;flex-shrink:0';
+      reopenBtn.innerHTML=`
+        <button class="task-action-btn" title="重新開啟" onclick="reopenProjectById('${p.id}',event)" style="font-size:12px;color:#27500A"><i class="ti ti-refresh" aria-hidden="true"></i></button>
+        <button class="task-action-btn" title="刪除" onclick="deleteProjectById('${p.id}',event)" style="font-size:12px;color:#E24B4A"><i class="ti ti-trash" aria-hidden="true"></i></button>`;
+      el.appendChild(dot);el.appendChild(name);el.appendChild(reopenBtn);
+      el.onclick=(e)=>{if(e.target.closest('button'))return;activeProject=p.id;renderProjects();renderDaily();renderGantt();};
+      closedSection.appendChild(el);
+    });
+    list.appendChild(closedSection);
+  }
+}
+
+async function closeProjectById(id, e){
+  if(e) e.stopPropagation();
+  await setProjectStatus(id,'closed',e);
+}
+
+async function reopenProjectById(id, e){
+  if(e) e.stopPropagation();
+  await setProjectStatus(id,'active',e);
+}
+
+async function deleteProjectById(id, e){
+  e.stopPropagation();
+  const p=projects.find(x=>String(x.id)===String(id));if(!p)return;
+  if(!confirm(`確定刪除「${p.name}」？
+此動作無法復原，但相關任務與請款記錄仍會保留。`))return;
+  const prev=[...projects];
+  projects=projects.filter(x=>String(x.id)!==String(id));
+  renderProjects();renderInvoice();renderDaily();renderGantt();
+  const res=await api('deleteProject',{id:String(id)});
+  if(!res||res.error){projects=prev;renderProjects();showToast('❌ 刪除失敗');}
+  else{if(activeProject===id){activeProject=null;}showToast('✓ 專案已刪除');}
+}
+
+async function startRename(proj, labelEl){
+  const input=document.createElement('input');
+  input.value=proj.name;
+  input.style.cssText='flex:1;font-size:12px;border:none;outline:none;background:transparent;min-width:0;font-family:inherit;color:inherit';
+  labelEl.replaceWith(input);
+  input.focus(); input.select();
+
+  const commit=async()=>{
+    const newName=input.value.trim()||proj.name;
+    proj.name=newName;
+    const res=await api('updateProject',{id:proj.id,name:newName});
+    if(!res||res.error){proj.name=proj.name;renderProjects();showToast('❌ 更新失敗');}
+    else{renderProjects();showToast('✓ 專案名稱已更新');}
+  };
+  input.onblur=commit;
+  input.onkeydown=e=>{if(e.key==='Enter')input.blur();if(e.key==='Escape'){proj.name=proj.name;renderProjects();}};
+}
+
+function filteredTasks(){
+  let base=tasks;
+  if(activeOwnerFilter){
+    const ownerProjIds=projects.filter(p=>(p.owner||'未指派')===activeOwnerFilter).map(p=>String(p.id));
+    base=base.filter(t=>ownerProjIds.includes(String(t.projId)));
+  }
+  if(activeProject) base=base.filter(t=>String(t.projId)===String(activeProject));
+  return base;
+}
+
+
+// ── Repeat Modal ──────────────────────────────────────────
+function openRepeatModal(taskId){
+  const t=tasks.find(x=>String(x.id)===String(taskId));if(!t)return;
+  const overlay=document.createElement('div');
+  overlay.className='repeat-modal-overlay';
+  overlay.id='repeat-modal-overlay';
+
+  const cur=t.repeat||'none';
+  const curRule=t.repeatRule||'';
+
+  overlay.innerHTML=`
+  <div class="repeat-modal">
+    <h3><i class="ti ti-repeat" style="font-size:14px;vertical-align:-2px;margin-right:6px"></i>重複設定</h3>
+    <div id="repeat-options">
+      ${[
+        {v:'none',   icon:'ti-ban',           label:'不重複',     desc:''},
+        {v:'weekly', icon:'ti-calendar-week', label:'每週重複',   desc:'每週同一天'},
+        {v:'monthly',icon:'ti-calendar',      label:'每月重複',   desc:'每月同一日'},
+        {v:'custom', icon:'ti-adjustments',   label:'自訂重複',   desc:'自訂星期或日期'},
+      ].map(o=>`
+        <div class="repeat-option ${cur===o.v?'selected':''}" onclick="selectRepeatOption('${o.v}')">
+          <div class="repeat-option-icon" style="background:${o.v==='none'?'#f0f0ed':o.v==='weekly'?'#E6F1FB':o.v==='monthly'?'#ECFDF5':'#EEF2FF'}">
+            <i class="ti ${o.icon}" style="color:${o.v==='none'?'#888':o.v==='weekly'?'#0C447C':o.v==='monthly'?'#065F46':'#3730A3'}"></i>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:500">${o.label}</div>
+            ${o.desc?`<div style="font-size:10px;color:#888">${o.desc}</div>`:''}
+          </div>
+          ${cur===o.v?'<i class="ti ti-check" style="color:#378ADD;margin-left:auto;font-size:14px"></i>':''}
+        </div>`).join('')}
+    </div>
+    <div id="repeat-custom-panel" style="display:${cur==='custom'?'block':'none'};margin-top:12px;padding:12px;background:#f5f5f3;border-radius:8px">
+      <div style="font-size:11px;color:#888;margin-bottom:8px;font-weight:500">每週哪幾天？</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        ${['一','二','三','四','五','六','日'].map((d,i)=>`
+          <button id="wd-${i+1}" onclick="toggleWeekday(${i+1})" style="width:32px;height:32px;border-radius:50%;border:1.5px solid #ddd;background:${curRule.includes('w'+(i+1))?'#1a1a18':'#fff'};color:${curRule.includes('w'+(i+1))?'#fff':'#666'};cursor:pointer;font-size:12px;font-weight:500;transition:all .15s">${d}</button>`).join('')}
+      </div>
+      <div style="font-size:11px;color:#888;margin-bottom:8px;font-weight:500">或每月哪幾號？（用逗號分隔，如 1,15）</div>
+      <input id="repeat-days-input" type="text" placeholder="例：1,15,28" value="${curRule.replace(/w\d/g,'').replace(/,+/g,',').replace(/^,|,$/g,'')}"
+        style="width:100%;padding:6px 10px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit;outline:none">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="g-btn" onclick="document.getElementById('repeat-modal-overlay').remove()">取消</button>
+      <button class="g-btn primary" onclick="saveRepeat('${taskId}')">儲存</button>
+    </div>
+  </div>`;
+
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{ if(e.target===overlay) overlay.remove(); });
+}
+
+function selectRepeatOption(val){
+  document.querySelectorAll('.repeat-option').forEach(el=>{
+    el.classList.remove('selected');
+    el.querySelectorAll('.ti-check').forEach(i=>i.remove());
+  });
+  const chosen=document.querySelector(`.repeat-option[onclick="selectRepeatOption('${val}')"]`);
+  if(chosen){
+    chosen.classList.add('selected');
+    const chk=document.createElement('i');
+    chk.className='ti ti-check';
+    chk.style.cssText='color:#378ADD;margin-left:auto;font-size:14px';
+    chosen.appendChild(chk);
+  }
+  document.getElementById('repeat-custom-panel').style.display=val==='custom'?'block':'none';
+}
+
+function toggleWeekday(n){
+  const btn=document.getElementById('wd-'+n);
+  if(!btn) return;
+  const isOn=btn.style.background==='rgb(26, 26, 24)';
+  btn.style.background=isOn?'#fff':'#1a1a18';
+  btn.style.color=isOn?'#666':'#fff';
+  btn.style.borderColor=isOn?'#ddd':'#1a1a18';
+}
+
+async function saveRepeat(taskId){
+  const t=tasks.find(x=>String(x.id)===String(taskId));if(!t)return;
+  const selected=document.querySelector('.repeat-option.selected');
+  const repeatVal=selected?selected.getAttribute('onclick').match(/'(\w+)'/)?.[1]||'none':'none';
+
+  let repeatRule='';
+  if(repeatVal==='custom'){
+    const wdays=[1,2,3,4,5,6,7].filter(n=>{
+      const btn=document.getElementById('wd-'+n);
+      return btn&&btn.style.background==='rgb(26, 26, 24)';
+    }).map(n=>'w'+n);
+    const dayInput=(document.getElementById('repeat-days-input')?.value||'').trim();
+    const mdays=dayInput?dayInput.split(',').map(s=>s.trim()).filter(s=>/^\d+$/.test(s)):[]; 
+    repeatRule=[...wdays,...mdays].join(',');
+  }
+
+  const prev={repeat:t.repeat,repeatRule:t.repeatRule};
+  t.repeat=repeatVal; t.repeatRule=repeatRule;
+
+  document.getElementById('repeat-modal-overlay')?.remove();
+
+  // If repeat is set, generate future task instances
+  if(repeatVal!=='none'){
+    await generateRepeatTasks(t);
+  }
+
+  const res=await api('updateTask',{id:String(t.id),repeat:repeatVal,repeatRule});
+  if(!res||res.error){
+    t.repeat=prev.repeat; t.repeatRule=prev.repeatRule;
+    showToast('❌ 更新失敗');
+  } else {
+    const labels={none:'已取消重複',weekly:'✓ 已設定每週重複',monthly:'✓ 已設定每月重複',custom:'✓ 已設定自訂重複'};
+    showToast(labels[repeatVal]||'✓ 重複已更新');
+  }
+  renderDaily();
+}
+
+async function generateRepeatTasks(srcTask){
+  const today2=new Date(); today2.setHours(0,0,0,0);
+  const endDate=new Date(today2.getFullYear()+1,11,31);
+  const srcDate=new Date(normDate(srcTask.date));
+  const existing=new Set(tasks.filter(t=>t.text===srcTask.text&&t.projId===srcTask.projId).map(t=>normDate(t.date)));
+  const toCreate=[];
+
+  if(srcTask.repeat==='weekly'){
+    let d=new Date(srcDate);
+    d.setDate(d.getDate()+7);
+    while(d<=endDate){
+      const ds=d.toISOString().slice(0,10);
+      if(!existing.has(ds)) toCreate.push(ds);
+      d.setDate(d.getDate()+7);
+    }
+  } else if(srcTask.repeat==='monthly'){
+    let m=srcDate.getMonth()+1, y=srcDate.getFullYear();
+    const dom=srcDate.getDate();
+    while(true){
+      m++; if(m>12){m=1;y++;}
+      if(y>endDate.getFullYear()) break;
+      const d=new Date(y,m-1,dom);
+      if(d>endDate) break;
+      const ds=d.toISOString().slice(0,10);
+      if(!existing.has(ds)) toCreate.push(ds);
+    }
+  } else if(srcTask.repeat==='custom'&&srcTask.repeatRule){
+    const rules=srcTask.repeatRule.split(',').map(s=>s.trim());
+    const wdays=rules.filter(r=>r.startsWith('w')).map(r=>parseInt(r.slice(1)));
+    const mdays=rules.filter(r=>/^\d+$/.test(r)).map(r=>parseInt(r));
+    let d=new Date(today2);
+    while(d<=endDate){
+      const dow=d.getDay()===0?7:d.getDay();
+      const dom2=d.getDate();
+      const ds=d.toISOString().slice(0,10);
+      if((wdays.includes(dow)||mdays.includes(dom2))&&!existing.has(ds)&&ds!==normDate(srcTask.date)){
+        toCreate.push(ds);
+      }
+      d.setDate(d.getDate()+1);
+    }
+  }
+
+  // Batch create (max 52 to avoid flooding)
+  for(const ds of toCreate.slice(0,52)){
+    const res=await api('addTask',{
+      text:srcTask.text, date:ds, projId:srcTask.projId,
+      done:false, prog:0, tagColor:srcTask.tagColor||'',
+      repeat:srcTask.repeat, repeatRule:srcTask.repeatRule||''
+    });
+    if(res&&res.id){
+      tasks.push({id:String(res.id),text:srcTask.text,date:ds,
+        projId:String(srcTask.projId),done:false,prog:0,
+        tagColor:srcTask.tagColor||'none',
+        repeat:srcTask.repeat,repeatRule:srcTask.repeatRule||''});
+    }
+  }
+}
+// ─────────────────────────────────────────────────────────
+
+function openTagManager(){
+  const existing=document.getElementById('tag-mgr-overlay');
+  if(existing){existing.remove();return;}
+
+  const overlay=document.createElement('div');
+  overlay.className='tag-mgr-overlay';
+  overlay.id='tag-mgr-overlay';
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+
+  function renderMgr(){
+    const editableTags=TAG_COLORS.filter(t=>t.id!=='none');
+    overlay.innerHTML=`
+    <div class="tag-mgr-modal">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h3 style="font-size:14px;font-weight:500"><i class="ti ti-tags" style="font-size:14px;vertical-align:-2px;margin-right:6px"></i>顏色標籤管理</h3>
+        <button class="panel-close" onclick="document.getElementById('tag-mgr-overlay').remove()"><i class="ti ti-x"></i></button>
+      </div>
+      <div id="tag-mgr-list">
+        ${editableTags.map((tc,idx)=>`
+        <div class="tag-mgr-row">
+          <div class="color-swatch-btn" style="background:${tc.bg}" title="點擊選擇背景色">
+            <input type="color" value="${tc.bg==='transparent'?'#ffffff':tc.bg}" onchange="updateTagField(${idx},'bg',this.value)">
+          </div>
+          <div class="color-swatch-btn" style="background:${tc.border};width:20px;height:20px;border-radius:4px" title="點擊選擇邊框色">
+            <input type="color" value="${tc.border==='transparent'?'#ffffff':tc.border}" onchange="updateTagField(${idx},'border',this.value)">
+          </div>
+          <input type="text" value="${tc.label}" onchange="updateTagField(${idx},'label',this.value)"
+            style="flex:1;font-size:12px;padding:5px 8px;border:0.5px solid #ddd;border-radius:8px;font-family:inherit;outline:none">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#888;cursor:pointer;flex-shrink:0">
+            <input type="checkbox" ${tc.text==='#ffffff'?'checked':''} onchange="updateTagField(${idx},'text',this.checked?'#ffffff':'#1a1a18')" style="cursor:pointer">
+            白字
+          </label>
+          <button class="task-action-btn" onclick="removeTag(${idx})" style="color:#E24B4A;flex-shrink:0"><i class="ti ti-trash"></i></button>
+        </div>`).join('')}
+      </div>
+      <button class="g-btn" onclick="addNewTag()" style="width:100%;margin-top:12px;justify-content:center">
+        <i class="ti ti-plus"></i> 新增顏色標籤
+      </button>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="g-btn" onclick="resetTagColors()">還原預設</button>
+        <button class="g-btn primary" onclick="applyTagColors()">儲存套用</button>
+      </div>
+    </div>`;
+  }
+
+  renderMgr();
+  document.body.appendChild(overlay);
+}
+
+function updateTagField(idx, field, value){
+  const editableTags=TAG_COLORS.filter(t=>t.id!=='none');
+  const tag=editableTags[idx];
+  if(!tag)return;
+  tag[field]=value;
+  // Update swatch preview live
+  const swatches=document.querySelectorAll('.tag-mgr-row')[idx]?.querySelectorAll('.color-swatch-btn');
+  if(swatches&&field==='bg'&&swatches[0]) swatches[0].style.background=value;
+  if(swatches&&field==='border'&&swatches[1]) swatches[1].style.background=value;
+}
+
+function addNewTag(){
+  const newTag={
+    id:'custom-'+Date.now(),
+    label:'新標籤',
+    bg:'#E8F4FF',
+    border:'#378ADD',
+    text:'#1a1a18'
+  };
+  // Insert before 'none'
+  const noneIdx=TAG_COLORS.findIndex(t=>t.id==='none');
+  TAG_COLORS.splice(noneIdx,0,newTag);
+  openTagManager();
+}
+
+function removeTag(idx){
+  const editableTags=TAG_COLORS.filter(t=>t.id!=='none');
+  const tag=editableTags[idx];
+  if(!tag||tag.id==='none')return;
+  if(DEFAULT_TAG_COLORS.find(d=>d.id===tag.id)){
+    if(!confirm('這是預設標籤，確定移除嗎？'))return;
+  }
+  const pos=TAG_COLORS.indexOf(tag);
+  TAG_COLORS.splice(pos,1);
+  openTagManager();
+}
+
+function applyTagColors(){
+  // Ensure 'none' is always last
+  const noneTag=TAG_COLORS.find(t=>t.id==='none')||{id:'none',label:'無底色',bg:'transparent',border:'transparent',text:'#1a1a18'};
+  const filtered=TAG_COLORS.filter(t=>t.id!=='none');
+  TAG_COLORS.length=0;
+  filtered.forEach(t=>TAG_COLORS.push(t));
+  TAG_COLORS.push(noneTag);
+  saveTagColors();
+  document.getElementById('tag-mgr-overlay')?.remove();
+  renderDaily();
+  showToast('✓ 顏色標籤已儲存');
+}
+
+function resetTagColors(){
+  if(!confirm('還原為預設標籤？自訂標籤將會刪除'))return;
+  TAG_COLORS.length=0;
+  JSON.parse(JSON.stringify(DEFAULT_TAG_COLORS)).forEach(t=>TAG_COLORS.push(t));
+  saveTagColors();
+  document.getElementById('tag-mgr-overlay')?.remove();
+  renderDaily();
+  showToast('✓ 已還原為預設標籤');
+}
+
+function filterByTag(tagId, el){
+  activeTagFilter = tagId;
+  const clearBtn=document.getElementById('legend-clear');
+  if(clearBtn) clearBtn.style.display=tagId?'flex':'none';
+  document.querySelectorAll('.tag-legend-item').forEach(i=>i.style.borderColor='transparent');
+  if(el&&tagId){ el.style.borderColor='#378ADD'; }
+  // Re-render just the task bodies without full rebuild
+  document.querySelectorAll('.day-body').forEach(body=>{
+    const ds=body.id.replace('body-','');
+    body.innerHTML='';
+    let dayTasks=filteredTasks().filter(t=>normDate(t.date)===ds);
+    if(activeTagFilter) dayTasks=dayTasks.filter(t=>(t.tagColor||'none')===activeTagFilter);
+    const sorted2=[...dayTasks.filter(t=>!(t.done===true||String(t.done)==='true')),...dayTasks.filter(t=>t.done===true||String(t.done)==='true')];
+    sorted2.forEach(t=>body.appendChild(renderTaskEl(t)));
+  });
+}
+
+function getMondayOf(d){
+  // Return the Monday of the week containing d
+  const day=new Date(d); day.setHours(0,0,0,0);
+  const dow=day.getDay(); // 0=Sun,1=Mon...
+  const diff=dow===0?-6:1-dow; // shift to Monday
+  return addDays(day,diff);
+}
+
+function renderDaily(){
+  const wrap=document.getElementById('view-daily');
+  wrap.style.overflowY='auto';
+
+  // ── Sticky toolbar ──
+  let toolbar=document.getElementById('daily-toolbar');
+  if(!toolbar){
+    toolbar=document.createElement('div');
+    toolbar.id='daily-toolbar';
+    toolbar.style.cssText='display:flex;align-items:center;gap:10px;margin-bottom:14px;position:sticky;top:0;z-index:10;background:#f5f5f3;padding:4px 0 8px';
+    wrap.appendChild(toolbar);
+  }
+  toolbar.innerHTML=`
+    <span style="font-size:13px;font-weight:500;color:#1a1a18">每日待辦</span>
+    <button class="g-btn" onclick="scrollToToday()" style="font-size:11px;margin-left:auto">
+      <i class="ti ti-calendar-event" style="font-size:13px"></i> 回到今天
+    </button>
+    <button class="g-btn" onclick="renderDaily()" style="font-size:11px">
+      <i class="ti ti-refresh" style="font-size:13px"></i>
+    </button>`;
+
+  // ── Build week content container first ──
+  let content=document.getElementById('daily-content');
+  if(!content){
+    content=document.createElement('div');
+    content.id='daily-content';
+    wrap.appendChild(content);
+  }
+
+  // ── Color legend (inserted before content) ──
+  let legend=document.getElementById('daily-legend');
+  if(!legend){
+    legend=document.createElement('div');
+    legend.id='daily-legend';
+    legend.className='tag-legend';
+    wrap.insertBefore(legend, content);
+  }
+  legend.innerHTML='<span style="font-size:11px;font-weight:500;color:#888;margin-right:4px;flex-shrink:0">顏色標籤</span>'+
+    TAG_COLORS.filter(tc=>tc.id!=='none').map(tc=>
+      `<div class="tag-legend-item" title="點擊篩選此類型" onclick="filterByTag('${tc.id}',this)">
+        <div class="tag-swatch" style="background:${tc.bg};border:1.5px solid ${tc.border}"></div>
+        <span>${tc.label}</span>
+      </div>`
+    ).join('')+
+    `<div class="tag-legend-item" id="legend-clear" style="display:none;border-color:#378ADD;color:#378ADD" onclick="filterByTag(null,this)">
+      <i class="ti ti-x" style="font-size:10px"></i> 清除篩選
+    </div>`;
+
+  content.innerHTML='';
+
+  // Render from last week through end of next year
+  const todayMonday=getMondayOf(today);
+  const startMonday=addDays(todayMonday,-7);
+  // End of next year
+  const endOfNextYear=new Date(today.getFullYear()+1,11,31);
+  const weeksTotal=Math.ceil((endOfNextYear-startMonday)/(7*86400000))+1;
+
+  for(let w=0;w<weeksTotal;w++){
+    const weekMonday=addDays(startMonday,w*7);
+    const weekFriday=addDays(weekMonday,4);
+    const weekDates=Array.from({length:5},(_,i)=>addDays(weekMonday,i)); // Mon–Fri
+
+    // Week label
+    const isPastWeek=weekFriday<today;
+    const isCurrentWeek=weekMonday<=today&&today<=weekFriday;
+
+    const weekLabel=document.createElement('div');
+    weekLabel.style.cssText=`display:flex;align-items:center;gap:8px;margin:${w===0?'0':'20px'} 0 8px;`;
+    const wMonth=weekMonday.toLocaleDateString('zh-TW',{month:'long'});
+    const wEnd=weekFriday.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'});
+    const wStart=weekMonday.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'});
+    const wTag=isCurrentWeek?'本週':isPastWeek?'上週 '+wStart:'';
+    weekLabel.innerHTML=`
+      <span style="font-size:11px;font-weight:500;color:${isCurrentWeek?'#1a1a18':'#aaa'}">${wStart} – ${wEnd}</span>
+      ${wTag?`<span style="font-size:10px;background:${isCurrentWeek?'#1a1a18':'#e5e5e0'};color:${isCurrentWeek?'#fff':'#888'};padding:1px 7px;border-radius:10px">${wTag}</span>`:''}
+      <div style="flex:1;height:0.5px;background:#e5e5e0"></div>`;
+    content.appendChild(weekLabel);
+
+    // 5-column grid
+    const grid=document.createElement('div');
+    grid.className='day-grid';
+    grid.id='week-grid-'+fmtDate(weekMonday);
+    content.appendChild(grid);
+
+    weekDates.forEach(day=>{
+      const ds=fmtDate(day);
+      const isToday=ds===fmtDate(today);
+      let dayTasks=filteredTasks().filter(t=>normDate(t.date)===ds);
+      if(activeTagFilter) dayTasks=dayTasks.filter(t=>(t.tagColor||'none')===activeTagFilter);
+
+      const card=document.createElement('div');
+      card.className='day-card'+(isToday?' today':'');
+      card.id='day-card-'+ds;
+      card.dataset.date=ds;
+      card.style.opacity=isPastWeek&&!isToday?'.65':'1';
+
+      card.ondragover=e=>{e.preventDefault();card.style.outline='2px dashed #378ADD';card.style.opacity='1'};
+      card.ondragleave=()=>{card.style.outline='';card.style.opacity=isPastWeek?'.65':'1'};
+      card.ondrop=async e=>{
+        e.preventDefault();card.style.outline='';card.style.opacity=isPastWeek?'.65':'1';
+        const tid=e.dataTransfer.getData('text/plain');
+        const t=tasks.find(x=>String(x.id)===String(tid));
+        if(!t)return;
+        const prevDate=t.date;
+        t.date=ds;
+        renderDaily();
+        const res=await api('updateTask',{id:String(t.id),date:ds});
+        if(res&&res.ok){showToast('✓ 任務已移動並同步');}
+        else{t.date=prevDate;renderDaily();showToast('❌ 移動失敗，已還原');}
+      };
+
+      const wd=day.toLocaleDateString('zh-TW',{weekday:'short'});
+      const mmdd=day.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'});
+      card.innerHTML=`
+        <div class="day-header">
+          <div class="day-date">${mmdd} ${wd}</div>
+          ${isToday?'<span class="today-badge">今天</span>':''}
+        </div>
+        <div class="day-body" id="body-${ds}"></div>
+        <div style="padding:3px 7px">
+          <input class="add-task-input" placeholder="＋ 新增待辦" onkeydown="if(event.key==='Enter')quickAdd(this,'${ds}')">
+        </div>`;
+      grid.appendChild(card);
+      const body=document.getElementById('body-'+ds);
+      const sorted=[...dayTasks.filter(t=>!(t.done===true||String(t.done)==='true')),...dayTasks.filter(t=>t.done===true||String(t.done)==='true')];
+      sorted.forEach(t=>body.appendChild(renderTaskEl(t)));
+    });
+  }
+
+  // Scroll to today on first render
+  setTimeout(()=>{
+    const todayCard=document.getElementById('day-card-'+fmtDate(today));
+    if(todayCard) todayCard.scrollIntoView({behavior:'smooth',block:'center'});
+  },80);
+}
+
+function scrollToToday(){
+  const todayCard=document.getElementById('day-card-'+fmtDate(today));
+  if(todayCard) todayCard.scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+function renderTaskEl(t){
+  const proj=projects.find(p=>String(p.id)===String(t.projId));
+  const color=proj?proj.color:'#888';
+  const isDone=t.done===true||String(t.done)==='true';
+  const tc=getTagColor(t.tagColor||'none');
+  const isDark=tc.id==='black';
+  const el=document.createElement('div');
+  el.className='task-item';el.draggable=true;
+  el.style.background=tc.bg;
+  el.style.borderLeftColor=tc.border;
+  if(isDark) el.style.color='#fff';
+  el.ondragstart=e=>e.dataTransfer.setData('text/plain',String(t.id));
+
+  const textDiv=document.createElement('div');
+  textDiv.className='task-text'+(isDone?' done':'');
+  textDiv.textContent=t.text;
+  textDiv.title='雙擊修改名稱';
+  textDiv.style.cssText='flex:1;font-size:12px;line-height:1.4;cursor:text;min-width:0;word-break:break-word'+(isDark?';color:#fff':'')+(isDone?';color:'+(isDark?'rgba(255,255,255,.45)':'#aaa'):'');
+  textDiv.ondblclick=e=>{
+    e.stopPropagation();
+    el.draggable=false;
+    const input=document.createElement('input');
+    input.value=t.text;
+    input.style.cssText='flex:1;font-size:12px;border:none;border-bottom:1.5px solid '+(isDark?'#fff':'#378ADD')+';outline:none;background:transparent;width:100%;font-family:inherit;color:'+(isDark?'#fff':'inherit')+';padding:0';
+    textDiv.replaceWith(input);
+    input.focus();input.select();
+    const commit=async()=>{
+      const newText=input.value.trim();
+      el.draggable=true;
+      if(!newText||newText===t.text){renderDaily();return;}
+      const prev=t.text;
+      t.text=newText;
+      renderDaily();
+      const res=await api('updateTask',{id:String(t.id),text:newText});
+      if(!res||res.error){t.text=prev;renderDaily();showToast('❌ 更新失敗，請重試');}
+      else{showToast('✓ 任務名稱已更新');}
+    };
+    input.onblur=commit;
+    input.onkeydown=e2=>{
+      if(e2.key==='Enter'){e2.preventDefault();input.blur();}
+      if(e2.key==='Escape'){el.draggable=true;t.text=t.text;renderDaily();}
+    };
+  };
+
+  const checkDiv=document.createElement('div');
+  checkDiv.className='task-check'+(isDone?' done':'');
+  if(isDone){checkDiv.style.cssText='background:'+color+';border-color:'+color;}
+  else if(isDark){checkDiv.style.borderColor='rgba(255,255,255,.5)';}
+  checkDiv.onclick=()=>toggleTask(String(t.id));
+  if(isDone){
+    const icon=document.createElement('i');
+    icon.className='ti ti-check';icon.setAttribute('aria-hidden','true');
+    icon.style.cssText='font-size:8px;color:#fff';
+    checkDiv.appendChild(icon);
+  }
+
+  const metaWrap=document.createElement('div');
+  metaWrap.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column;gap:1px';
+  metaWrap.appendChild(textDiv);
+  if(proj){
+    const projLabel=document.createElement('div');
+    projLabel.className='task-proj';
+    projLabel.style.color=isDark?'rgba(255,255,255,.65)':color;
+    projLabel.textContent='● '+proj.name;
+    metaWrap.appendChild(projLabel);
+  }
+  if(t.repeat&&t.repeat!=='none'){
+    const repBadge=document.createElement('div');
+    const repLabels={weekly:'每週重複',monthly:'每月重複',custom:'自訂重複'};
+    repBadge.style.cssText='font-size:9px;color:'+(isDark?'rgba(255,255,255,.65)':'#378ADD')+';margin-top:1px';
+    repBadge.innerHTML='<i class="ti ti-repeat" style="font-size:9px"></i> '+(repLabels[t.repeat]||t.repeat);
+    metaWrap.appendChild(repBadge);
+  }
+
+  const actionsDiv=document.createElement('div');
+  actionsDiv.className='task-actions';
+  actionsDiv.style.position='relative';
+  const btnColor=isDark?'rgba(255,255,255,.7)':'#aaa';
+  const btnHoverBg=isDark?'rgba(255,255,255,.15)':'#eee';
+  actionsDiv.innerHTML=`
+    <button class="task-action-btn" title="重複設定" onclick="openRepeatModal('${t.id}')" style="color:${t.repeat&&t.repeat!=='none'?(isDark?'#7dd3fc':'#378ADD'):btnColor}"><i class="ti ti-repeat" aria-hidden="true"></i></button>
+    <button class="task-action-btn" title="標籤顏色" onclick="openTagPicker('${t.id}',this)" style="color:${isDark?'rgba(255,255,255,.8)':tc.id==='none'?'#aaa':tc.border}"><i class="ti ti-palette" aria-hidden="true"></i></button>
+    <button class="task-action-btn" title="修改名稱" onclick="startRenameTask('${t.id}',this)" style="color:${btnColor}"><i class="ti ti-edit" aria-hidden="true"></i></button>
+    <button class="task-action-btn" title="移動" onclick="moveTask('${t.id}')" style="color:${btnColor}"><i class="ti ti-arrows-move" aria-hidden="true"></i></button>
+    <button class="task-action-btn" title="刪除" onclick="deleteTask('${t.id}')" style="color:${isDark?'#ff8080':'#E24B4A'}"><i class="ti ti-trash" aria-hidden="true"></i></button>`;
+
+  el.appendChild(checkDiv);
+  el.appendChild(metaWrap);
+  el.appendChild(actionsDiv);
+  return el;
+}
+
+function openTagPicker(taskId, btn){
+  document.querySelectorAll('.tag-picker-popup').forEach(p=>p.remove());
+  const t=tasks.find(x=>String(x.id)===String(taskId));if(!t)return;
+
+  const popup=document.createElement('div');
+  popup.className='tag-picker-popup';
+  // Use fixed positioning so it's never clipped by overflow:hidden parents
+  popup.style.cssText='position:fixed;z-index:1000;background:#fff;border:0.5px solid #ddd;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:6px;min-width:200px;max-height:320px;overflow-y:auto';
+
+  TAG_COLORS.forEach(tc=>{
+    const row=document.createElement('div');
+    row.className='tag-picker-row';
+    const isCurrent=(t.tagColor||'none')===tc.id;
+    row.innerHTML=`<div class="tag-picker-swatch" style="background:${tc.bg==='transparent'?'#f5f5f3':tc.bg};border:1.5px solid ${tc.id==='none'?'#ddd':tc.border}"></div>
+      <span style="flex:1;font-size:12px">${tc.label}</span>
+      ${isCurrent?'<i class="ti ti-check" style="font-size:10px;color:#378ADD"></i>':''}`;
+    row.onclick=async(e)=>{
+      e.stopPropagation();
+      popup.remove();
+      await setTaskTag(taskId, tc.id);
+    };
+    popup.appendChild(row);
+  });
+
+  document.body.appendChild(popup);
+
+  // Position: calculate where to place it avoiding viewport edges
+  const btnRect=btn.getBoundingClientRect();
+  const vpW=window.innerWidth, vpH=window.innerHeight;
+  const popW=220, popH=Math.min(320, TAG_COLORS.length*36+16);
+
+  let left=btnRect.left;
+  let top=btnRect.bottom+4;
+
+  // Flip left if overflows right edge
+  if(left+popW>vpW-8) left=Math.max(8, btnRect.right-popW);
+  // Flip above if overflows bottom edge
+  if(top+popH>vpH-8) top=Math.max(8, btnRect.top-popH-4);
+
+  popup.style.left=left+'px';
+  popup.style.top=top+'px';
+
+  // Close on outside click or scroll
+  const close=()=>{ popup.remove(); document.removeEventListener('click',close); document.removeEventListener('scroll',close,true); };
+  setTimeout(()=>{ document.addEventListener('click',close); document.addEventListener('scroll',close,true); },0);
+}
+
+async function setTaskTag(taskId, tagColorId){
+  const t=tasks.find(x=>String(x.id)===String(taskId));if(!t)return;
+  const prev=t.tagColor||'none';
+  t.tagColor=tagColorId;
+  renderDaily();
+  const res=await api('updateTask',{id:String(t.id),tagColor:tagColorId});
+  if(!res||res.ok===false||res.error){t.tagColor=prev;renderDaily();showToast('❌ 更新失敗');}
+}
+
+function startRenameTask(id, btn){
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+  const el=btn.closest('.task-item');
+  const textDiv=el.querySelector('.task-text');
+  if(textDiv) textDiv.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+}
+
+async function quickAdd(input,date){
+  const text=input.value.trim();if(!text)return;
+  const projId=activeProject||(projects[0]?projects[0].id:null);
+  input.value='';
+  input.disabled=true;
+  const res=await api('addTask',{text,date,projId,done:false,prog:0});
+  input.disabled=false;
+  if(res&&res.id){
+    tasks.push({id:String(res.id),text,date,projId:String(projId),done:false,prog:0,ganttStart:'',ganttEnd:''});
+    renderDaily();renderProjects();
+    showToast('✓ 已新增並同步');
+  } else {
+    input.value=text;
+    showToast('❌ 新增失敗，請重試');
+  }
+}
+
+async function toggleTask(id){
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+  const prev=t.done;
+  t.done=!(t.done===true||String(t.done)==='true');
+  renderDaily();
+  const res=await api('updateTask',{id:String(t.id),done:t.done});
+  if(!res||res.error){
+    t.done=prev;renderDaily();showToast('❌ 更新失敗，請重試');
+  } else {
+    showToast(t.done?'✓ 任務完成，已同步':'已取消完成');
+  }
+}
+
+async function deleteTask(id){
+  const prev=[...tasks];
+  tasks=tasks.filter(t=>String(t.id)!==String(id));
+  renderDaily();renderProjects();renderGantt();
+  const res=await api('deleteTask',{id:String(id)});
+  if(!res||res.error){
+    tasks=prev;renderDaily();renderProjects();renderGantt();
+    showToast('❌ 刪除失敗，請重試');
+  } else {
+    showToast('✓ 任務已刪除並同步');
+  }
+}
+
+async function moveTask(id){
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+  const d=prompt('移動到哪天？（YYYY-MM-DD）',t.date);
+  if(d&&/^\d{4}-\d{2}-\d{2}$/.test(d)){
+    const prev=t.date;
+    t.date=d;renderDaily();
+    const res=await api('updateTask',{id:String(t.id),date:d});
+    if(!res||res.error){
+      t.date=prev;renderDaily();showToast('❌ 移動失敗，請重試');
+    } else {
+      showToast('✓ 已移動並同步');
+    }
+  }
+}
+
+async function addProject(){
+  const name=prompt('專案名稱：');if(!name)return;
+  const color=COLORS[projects.length%COLORS.length];
+  const res=await api('addProject',{name,color,members:[0]});
+  if(res&&res.id){projects.push({id:String(res.id),name,color});renderProjects();showToast('✓ 專案已建立並同步');}
+  else if(res&&res.error){showToast('❌ 建立失敗：'+res.error);}
+}
+
+function toggleAddForm(){
+  ganttFormOpen=!ganttFormOpen;
+  document.getElementById('gantt-add-form').classList.toggle('open',ganttFormOpen);
+  document.getElementById('f-proj').innerHTML=projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  if(ganttFormOpen){document.getElementById('f-start').value=fmtDate(today);document.getElementById('f-end').value=fmtDate(addDays(today,7));}
+}
+
+async function addGanttTask(){
+  const name=document.getElementById('f-name').value.trim();
+  const start=document.getElementById('f-start').value;
+  const end=document.getElementById('f-end').value;
+  const projId=document.getElementById('f-proj').value;
+  const prog=parseInt(document.getElementById('f-prog').value);
+  if(!name||!start||!end){showToast('請填入名稱及日期');return;}
+  if(start>end){showToast('結束日期不能早於開始');return;}
+  const res=await api('addTask',{text:name,date:start,projId,done:false,ganttStart:start,ganttEnd:end,prog});
+  if(res&&res.id){tasks.push({id:String(res.id),text:name,date:start,projId:String(projId),done:false,ganttStart:start,ganttEnd:end,prog});toggleAddForm();renderGantt();renderProjects();showToast('✓ 任務已新增至甘特圖');}
+  else if(res&&res.error){showToast('❌ 新增失敗：'+res.error);}
+}
+
+function renderGantt(){
+  const scale=document.getElementById('gantt-scale').value;
+  const days=scale==='week'?14:scale==='month'?30:90;
+  const startDate=dateOf(document.getElementById('gantt-start').value)||addDays(today,-3);
+  const endDate=addDays(startDate,days-1);
+  const todayS=fmtDate(today);
+  const ganttTasks=filteredTasks().filter(t=>normDate(t.ganttStart)&&normDate(t.ganttEnd));
+  const DW=scale==='quarter'?18:scale==='month'?26:44;
+  const totalW=190+days*DW;
+  let html=`<div style="min-width:${totalW}px">`;
+  html+=`<div class="gantt-head" style="min-width:${totalW}px"><div class="gantt-label-col">任務 / 專案</div><div style="flex:1;display:flex">`;
+  for(let i=0;i<days;i++){
+    const d=addDays(startDate,i),ds=fmtDate(d),isT=ds===todayS;
+    const lbl=scale==='quarter'?(d.getDate()===1?d.toLocaleDateString('zh-TW',{month:'short'}):d.getDate()%7===1?d.getDate():''):scale==='month'?(d.getDay()===0||d.getDate()===1?d.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'}):''):d.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'});
+    html+=`<div class="gantt-day-head${isT?' tc':''}" style="width:${DW}px">${lbl}</div>`;
+  }
+  html+=`</div></div>`;
+  if(!ganttTasks.length){html+=`<div class="empty-state">尚無甘特圖任務</div>`;}
+  else ganttTasks.forEach(t=>{
+    const proj=projects.find(p=>String(p.id)===String(t.projId)),color=proj?proj.color:'#888';
+    const ts=dateOf(t.ganttStart),te=dateOf(t.ganttEnd);
+    const startDiff=Math.round((ts-startDate)/86400000);
+    const dur=Math.round((te-ts)/86400000)+1;
+    const barLeft=Math.max(startDiff*DW,0);
+    const barW=Math.min(Math.max(dur*DW-2,4),days*DW-barLeft-2);
+    const visible=te>=startDate&&ts<=endDate;
+    html+=`<div class="gantt-row" style="min-width:${totalW}px">
+      <div class="gantt-row-label"><div class="proj-dot" style="background:${color}"></div><div style="min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${t.text}</div>${proj?`<div style="font-size:10px;color:#888">${proj.name}</div>`:''}</div></div>
+      <div class="gantt-timeline-row">`;
+    for(let i=0;i<days;i++){const ds=fmtDate(addDays(startDate,i));html+=`<div class="gantt-cell${ds===todayS?' tc':''}" style="width:${DW}px"></div>`;}
+    if(visible&&barW>0)html+=`<div class="gantt-bar" style="left:${barLeft+1}px;width:${barW}px;background:${color}"><div class="gantt-prog" style="width:${Math.round(t.prog||0)}%"></div><span style="position:relative;z-index:1">${barW>60?t.text:''}</span></div>`;
+    html+=`</div></div>`;
+  });
+  html+='</div>';
+  document.getElementById('gantt-container').innerHTML=html;
+}
+
+function openPanel(name){
+  closeAllPanels();
+  document.getElementById('panel-'+name).classList.add('open');
+  document.getElementById('overlay').classList.add('open');
+  if(name==='notif')renderNotif();
+  else if(name==='share')renderShare();
+  else if(name==='remind')renderRemind();
+}
+function closeAllPanels(){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('open'));
+  document.getElementById('overlay').classList.remove('open');
+}
+
+function renderNotif(){
+  const body=document.getElementById('notif-body');
+  if(!notifications.length){body.innerHTML='<div class="empty-state"><i class="ti ti-bell-off" style="font-size:24px;display:block;margin-bottom:8px"></i>暫無通知</div>';return;}
+  body.innerHTML=notifications.map(n=>{
+    const isRead=n.read===true||String(n.read)==='true';
+    return `<div class="notif-item" style="opacity:${isRead?.65:1}" onclick="markRead('${n.id}')">
+      <div class="notif-icon" style="background:${n.bg};color:${n.ic}"><i class="ti ${n.icon}" style="font-size:14px"></i></div>
+      <div style="flex:1"><div class="notif-title">${n.title}</div><div class="notif-time">${n.time}</div></div>
+      ${!isRead?'<div class="notif-unread"></div>':''}
+    </div>`;
+  }).join('');
+}
+
+async function markRead(id){
+  const n=notifications.find(x=>String(x.id)===id);
+  if(n){n.read=true;await api('markRead',{id});updateBadge();renderNotif();}
+}
+async function markAllRead(){
+  for(const n of notifications)if(String(n.read)!=='true'&&n.read!==true){n.read=true;await api('markRead',{id:n.id});}
+  updateBadge();renderNotif();showToast('全部已讀');
+}
+
+function renderShare(){
+  const body=document.getElementById('share-body');
+  body.innerHTML=`
+    <div style="margin-bottom:16px"><div class="section-title">目前成員</div>
+      ${members.map(m=>`<div class="member-row">
+        <div class="av" style="width:32px;height:32px;font-size:12px;background:${m.avColor};color:${m.textColor}">${m.initials}</div>
+        <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:500">${m.name}</div><div style="font-size:11px;color:#888">${m.email}</div></div>
+        <span class="role-badge" style="background:${m.role==='owner'?'#EAF3DE':m.role==='editor'?'#E6F1FB':'#F1EFE8'};color:${m.role==='owner'?'#27500A':m.role==='editor'?'#0C447C':'#444441'}">${m.role==='owner'?'擁有者':m.role==='editor'?'編輯者':'檢視者'}</span>
+      </div>`).join('')}
+    </div>
+    <div style="margin-bottom:16px"><div class="section-title">邀請成員</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input type="email" id="invite-email" placeholder="輸入 Email..." style="flex:1;padding:6px 10px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit;background:#fff">
+        <button class="g-btn primary" onclick="sendInvite()">邀請</button>
+      </div>
+    </div>
+    <div><div class="section-title">Google Sheets 連結</div>
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f5f5f3;border-radius:8px;margin-top:8px">
+        <span style="flex:1;font-size:11px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace">${API_URL||'尚未連線'}</span>
+        <button class="g-btn" style="font-size:11px;padding:3px 8px;white-space:nowrap" onclick="navigator.clipboard.writeText('${API_URL}').then(()=>showToast('已複製連結'))"><i class="ti ti-copy" style="font-size:12px"></i></button>
+      </div>
+    </div>`;
+}
+
+async function sendInvite(){
+  const email=document.getElementById('invite-email').value.trim();
+  if(!email||!email.includes('@')){showToast('請輸入有效 Email');return;}
+  const notif={type:'share',title:'邀請已寄出至 '+email,time:'剛剛',icon:'ti-mail',bg:'#E6F1FB',ic:'#185FA5'};
+  const res=await api('addNotif',notif);
+  if(res&&res.id){notifications.unshift({...notif,id:res.id,read:false});updateBadge();}
+  showToast('✓ 邀請已寄出並記錄');
+  document.getElementById('invite-email').value='';
+}
+
+function renderRemind(){
+  const body=document.getElementById('remind-body');
+  const taskOpts=tasks.filter(t=>String(t.done)!=='true'&&t.done!==true).map(t=>`<option value="${t.id}">${t.text}</option>`).join('');
+  body.innerHTML=`
+    <div style="margin-bottom:14px"><div class="section-title">已設定的提醒</div>
+      ${reminders.length?reminders.map(r=>{
+        const proj=projects.find(p=>String(p.id)===String(r.projId));
+        const dt=new Date(r.when);
+        const fmt=dt.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'})+' '+dt.toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'});
+        return `<div class="remind-item">
+          <div class="av" style="width:32px;height:32px;font-size:14px;background:#FCEBEB;color:#A32D2D"><i class="ti ti-alarm"></i></div>
+          <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:500">${r.taskText}</div><div style="font-size:11px;color:#888;margin-top:2px">${fmt}${proj?'  ·  '+proj.name:''}</div></div>
+          <button class="remind-del" onclick="deleteRemind('${r.id}')"><i class="ti ti-trash"></i></button>
+        </div>`;
+      }).join(''):'<div style="padding:16px 0;text-align:center;font-size:12px;color:#bbb">尚無提醒</div>'}
+    </div>
+    <div class="section-title">新增提醒</div>
+    <div class="remind-form">
+      <select id="r-task"><option value="">選擇任務...</option>${taskOpts}</select>
+      <input type="datetime-local" id="r-time">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="g-btn" style="font-size:11px;padding:4px 8px" onclick="setQuick(0)">30分鐘後</button>
+        <button class="g-btn" style="font-size:11px;padding:4px 8px" onclick="setQuick(1)">1小時後</button>
+        <button class="g-btn" style="font-size:11px;padding:4px 8px" onclick="setQuick(2)">明天</button>
+      </div>
+      <button class="g-btn primary" style="width:100%" onclick="addRemind()"><i class="ti ti-alarm"></i> 新增提醒</button>
+    </div>`;
+}
+function setQuick(mode){
+  const now=new Date();
+  if(mode===0)now.setMinutes(now.getMinutes()+30);
+  else if(mode===1)now.setHours(now.getHours()+1);
+  else now.setDate(now.getDate()+1);
+  document.getElementById('r-time').value=now.toISOString().slice(0,16);
+}
+async function deleteRemind(id){
+  reminders=reminders.filter(r=>String(r.id)!==id);
+  await api('deleteReminder',{id});renderRemind();showToast('提醒已刪除');
+}
+async function addRemind(){
+  const tid=document.getElementById('r-task').value;
+  const when=document.getElementById('r-time').value;
+  if(!tid||!when){showToast('請選擇任務並設定時間');return;}
+  const task=tasks.find(t=>String(t.id)===tid);if(!task)return;
+  const res=await api('addReminder',{taskId:tid,taskText:task.text,when,projId:task.projId});
+  if(res&&res.id){reminders.push({id:res.id,taskId:tid,taskText:task.text,when,projId:task.projId});}
+  const notif={type:'remind',title:'提醒已設定：「'+task.text+'」',time:'剛剛',icon:'ti-alarm',bg:'#FCEBEB',ic:'#A32D2D'};
+  const nres=await api('addNotif',notif);
+  if(nres&&nres.id)notifications.unshift({...notif,id:nres.id,read:false});
+  updateBadge();renderRemind();showToast('✓ 提醒已新增並同步');
+}
+
+
+let invoices = [];
+let recurring = [];
+let weekOffset = 0;
+let activeTagFilter = null;
+
+
+async function loadInvoiceData(){
+  const [inv, rec] = await Promise.all([api('getInvoices'), api('getRecurring')]);
+  if(inv) invoices = inv;
+  if(rec) recurring = rec;
+}
+
+function fmt(n){ return 'NT$' + Number(n||0).toLocaleString(); }
+
+function renderInvoice(){
+  const root = document.getElementById('invoice-root');
+  if(!root) return;
+
+  const activeProjs = projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
+  const closedProjs = projects.filter(p=>p.status==='closed');
+
+  function makeInvCard(p, isClosed){
+    const invs = invoices.filter(i => String(i.projId)===String(p.id));
+    const recItems = recurring.filter(r => String(r.projId)===String(p.id) && (String(r.active)==='true'||r.active===true));
+    const projectTotal = invs.reduce((s,i)=>s+Number(i.amount||0),0);
+    const paidTotal = invs.filter(i=>String(i.paid)==='true'||i.paid===true).reduce((s,i)=>s+Number(i.amount||0),0);
+    const unpaid = projectTotal - paidTotal;
+    const recMonthly = recItems.reduce((s,r)=>s+Number(r.amount||0),0);
+    const pct = projectTotal ? Math.round(paidTotal/projectTotal*100) : 0;
+    const allPaid = projectTotal>0 && unpaid===0;
+    return `<div class="inv-card" style="${isClosed?'opacity:.75;border-style:dashed':''}${allPaid&&!isClosed?';border-color:#4FBE82':''}">
+      <div class="inv-card-header">
+        <div style="width:10px;height:10px;border-radius:50%;background:${p.color};flex-shrink:0"></div>
+        <div class="inv-card-name">${p.name}</div>
+        ${isClosed?'<span style="font-size:10px;background:#f0f0ed;color:#888;padding:1px 6px;border-radius:10px;margin-left:auto">結案</span>':''}
+        ${allPaid&&!isClosed?'<span style="font-size:10px;background:#EAF3DE;color:#27500A;padding:1px 6px;border-radius:10px;margin-left:auto">全額完成</span>':''}
+      </div>
+      <div class="inv-stat"><span class="inv-stat-label">專案總金額</span><span>${fmt(projectTotal)}</span></div>
+      <div class="inv-stat"><span class="inv-stat-label">已請款</span><span style="color:#27500A">${fmt(paidTotal)}</span></div>
+      <div class="inv-stat"><span class="inv-stat-label">未請款</span><span style="color:${unpaid>0?'#791F1F':'#888'}">${fmt(unpaid)}</span></div>
+      ${recMonthly?`<div class="inv-stat"><span class="inv-stat-label">每月固定</span><span style="color:#854F0B">${fmt(recMonthly)}/月</span></div>`:''}
+      <div style="margin-top:8px;height:4px;background:#f0f0ed;border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${p.color};border-radius:4px;transition:width .4s"></div>
+      </div>
+      <div style="font-size:10px;color:#888;margin-top:3px;text-align:right">${pct}% 已請款</div>
+    </div>`;
+  }
+
+  // ── Summary cards ──
+  let grandTotal=0,grandPaid=0;
+  projects.forEach(p=>{
+    const invs=invoices.filter(i=>String(i.projId)===String(p.id));
+    grandTotal+=invs.reduce((s,i)=>s+Number(i.amount||0),0);
+    grandPaid+=invs.filter(i=>String(i.paid)==='true'||i.paid===true).reduce((s,i)=>s+Number(i.amount||0),0);
+  });
+
+  let summaryHtml='<div class="inv-summary-grid">';
+  activeProjs.forEach(p=>{ summaryHtml+=makeInvCard(p,false); });
+  summaryHtml+=`<div class="inv-card" style="border-color:#1a1a18">
+    <div class="inv-card-header"><i class="ti ti-cash" style="font-size:16px;color:#888"></i><div class="inv-card-name">全部合計</div></div>
+    <div class="inv-stat"><span class="inv-stat-label">總金額</span><span>${fmt(grandTotal)}</span></div>
+    <div class="inv-stat"><span class="inv-stat-label">已請款</span><span style="color:#27500A">${fmt(grandPaid)}</span></div>
+    <div class="inv-stat"><span class="inv-stat-label">未請款</span><span style="color:#791F1F">${fmt(grandTotal-grandPaid)}</span></div>
+    <div style="margin-top:8px;height:4px;background:#f0f0ed;border-radius:4px;overflow:hidden">
+      <div style="height:100%;width:${grandTotal?Math.round(grandPaid/grandTotal*100):0}%;background:#1a1a18;border-radius:4px"></div>
+    </div>
+    <div style="font-size:10px;color:#888;margin-top:3px;text-align:right">${grandTotal?Math.round(grandPaid/grandTotal*100):0}% 已請款</div>
+  </div>`;
+  summaryHtml+='</div>';
+
+  // ── Active project invoice sections ──
+  function makeInvSection(p){
+    const projInvs=invoices.filter(i=>String(i.projId)===String(p.id)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const isClosed=p.status==='closed';
+    return `<div class="inv-section">
+      <div class="inv-section-header">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:10px;height:10px;border-radius:50%;background:${p.color}"></div>
+          <span class="inv-section-title">${p.name} — 專案結帳</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+        ${!isClosed?`<button class="g-btn" style="font-size:11px;padding:3px 8px;color:#E24B4A;border-color:#E24B4A" onclick="deleteInvSection('${p.id}')" title="清除此專案請款紀錄">
+          <i class="ti ti-trash"></i>
+        </button>
+        <button class="g-btn primary" style="font-size:11px;padding:3px 10px" onclick="openAddInvoice('${p.id}')">
+          <i class="ti ti-plus"></i> 新增請款日
+        </button>`:''}
+      </div>
+      </div>
+      <div class="inv-add-form" id="inv-form-${p.id}">
+        <div class="form-group" style="min-width:130px"><label>請款日期</label><input type="date" id="inv-date-${p.id}"></div>
+        <div class="form-group" style="min-width:120px"><label>金額 (NT$)</label><input type="number" id="inv-amt-${p.id}" placeholder="0" min="0" step="1000"></div>
+        <div class="form-group" style="flex:2;min-width:160px"><label>備註</label><input type="text" id="inv-note-${p.id}" placeholder="請款說明..."></div>
+        <div class="form-group" style="min-width:80px"><label>狀態</label>
+          <select id="inv-paid-${p.id}"><option value="false">未請款</option><option value="true">已請款</option></select>
+        </div>
+        <div style="display:flex;gap:6px;align-items:flex-end">
+          <button class="g-btn primary" onclick="saveInvoice('${p.id}')">新增</button>
+          <button class="g-btn" onclick="closeAddInvoice('${p.id}')">取消</button>
+        </div>
+      </div>
+      <div class="inv-row inv-head" style="grid-template-columns:120px 1fr 100px 80px 80px">
+        <span>請款日期</span><span>備註</span><span>金額</span><span>狀態</span><span></span>
+      </div>
+      ${projInvs.length ? projInvs.map(inv=>`
+        <div class="inv-row">
+          <span>${inv.date||'—'}</span>
+          <span style="color:#666">${inv.note||'—'}</span>
+          <span style="font-weight:500">${fmt(inv.amount)}</span>
+          <span><span class="paid-badge ${(String(inv.paid)==='true'||inv.paid===true)?'paid-yes':'paid-no'}" onclick="togglePaid('${inv.id}')">
+            ${(String(inv.paid)==='true'||inv.paid===true)?'已請款':'未請款'}
+          </span></span>
+          <span>${!isClosed?`<button class="task-action-btn" onclick="deleteInv('${inv.id}')" style="color:#E24B4A"><i class="ti ti-trash"></i></button>`:''}</span>
+        </div>`).join('')
+      : '<div style="padding:16px 14px;font-size:12px;color:#bbb">尚無請款紀錄</div>'}
+    </div>`;
+  }
+
+  let invHtml = activeProjs.map(p=>makeInvSection(p)).join('');
+
+  // ── Recurring section ──
+  const recHtml = `<div class="inv-section">
+    <div class="inv-section-header">
+      <span class="inv-section-title"><i class="ti ti-refresh" style="font-size:13px;vertical-align:-1px;margin-right:5px"></i>每月固定請款</span>
+      <button class="g-btn primary" style="font-size:11px;padding:3px 10px" onclick="openAddRecurring()">
+        <i class="ti ti-plus"></i> 新增固定請款
+      </button>
+    </div>
+    <div class="inv-add-form" id="rec-form">
+      <div class="form-group" style="min-width:130px"><label>專案</label><select id="rec-proj">${activeProjs.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
+      <div class="form-group" style="min-width:100px"><label>每月幾號</label><input type="number" id="rec-day" min="1" max="28" placeholder="1~28"></div>
+      <div class="form-group" style="min-width:120px"><label>金額 (NT$)</label><input type="number" id="rec-amt" placeholder="0" min="0" step="1000"></div>
+      <div class="form-group" style="flex:2;min-width:160px"><label>備註</label><input type="text" id="rec-note" placeholder="每月請款說明..."></div>
+      <div style="display:flex;gap:6px;align-items:flex-end">
+        <button class="g-btn primary" onclick="saveRecurring()">新增</button>
+        <button class="g-btn" onclick="document.getElementById('rec-form').classList.remove('open')">取消</button>
+      </div>
+    </div>
+    <div class="rec-row inv-head" style="grid-template-columns:80px 1fr 100px 80px 60px">
+      <span>每月幾號</span><span>備註</span><span>金額/月</span><span>專案</span><span></span>
+    </div>
+    ${recurring.length ? recurring.map(r=>{
+      const p=projects.find(x=>String(x.id)===String(r.projId));
+      return `<div class="rec-row">
+        <span style="font-weight:500">每月 ${r.dayOfMonth} 號</span>
+        <span style="color:#666">${r.note||'—'}</span>
+        <span style="font-weight:500">${fmt(r.amount)}</span>
+        <span>${p?`<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:${p.color};display:inline-block"></span>${p.name}</span>`:'—'}</span>
+        <span><button class="task-action-btn" onclick="deleteRec('${r.id}')" style="color:#E24B4A"><i class="ti ti-trash"></i></button></span>
+      </div>`;
+    }).join('') : '<div style="padding:16px 14px;font-size:12px;color:#bbb">尚無固定請款項目</div>'}
+  </div>`;
+
+  // ── Closed projects section ──
+  let closedHtml = '';
+  if(closedProjs.length){
+    closedHtml = `<div style="margin-top:20px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer" onclick="toggleClosedInv()">
+        <i class="ti ti-archive" style="font-size:14px;color:#888"></i>
+        <span style="font-size:13px;font-weight:500;color:#888">結案專案 (${closedProjs.length})</span>
+        <i class="ti ti-chevron-down" id="closed-inv-arrow" style="font-size:12px;color:#aaa;margin-left:auto;transition:transform .15s"></i>
+      </div>
+      <div id="closed-inv-section" style="display:none">
+        <div class="inv-summary-grid" style="margin-bottom:14px">${closedProjs.map(p=>makeInvCard(p,true)).join('')}</div>
+        ${closedProjs.map(p=>makeInvSection(p)).join('')}
+      </div>
+    </div>`;
+  }
+
+  root.innerHTML = summaryHtml + invHtml + recHtml + closedHtml;
+}
+
+function toggleClosedInv(){
+  const sec=document.getElementById('closed-inv-section');
+  const arrow=document.getElementById('closed-inv-arrow');
+  if(!sec)return;
+  const isOpen=sec.style.display!=='none';
+  sec.style.display=isOpen?'none':'block';
+  if(arrow)arrow.style.transform=isOpen?'':'rotate(180deg)';
+}
+
+
+function openAddInvoice(projId){
+  document.querySelectorAll('.inv-add-form').forEach(f=>f.classList.remove('open'));
+  const f=document.getElementById('inv-form-'+projId);
+  if(f){ f.classList.add('open'); document.getElementById('inv-date-'+projId).value=new Date().toISOString().slice(0,10); }
+}
+function closeAddInvoice(projId){ document.getElementById('inv-form-'+projId).classList.remove('open'); }
+
+async function saveInvoice(projId){
+  const date=document.getElementById('inv-date-'+projId).value;
+  const amount=document.getElementById('inv-amt-'+projId).value;
+  const note=document.getElementById('inv-note-'+projId).value;
+  const paid=document.getElementById('inv-paid-'+projId).value==='true';
+  if(!date||!amount){showToast('請填入日期與金額');return;}
+  const res=await api('addInvoice',{projId,date,amount:Number(amount),note,paid});
+  if(res&&res.id){
+    invoices.push({id:String(res.id),projId:String(projId),date,amount:Number(amount),note,paid});
+    // If not paid, also add to tasks as a to-do
+    if(!paid){
+      const proj=projects.find(p=>String(p.id)===String(projId));
+      const taskText=`請款：${proj?proj.name:''}${note?' - '+note:''} ${fmt(amount)}`;
+      const r2=await api('addTask',{text:taskText,date,projId,done:false,ganttStart:date,ganttEnd:date,prog:0});
+      if(r2&&r2.id) tasks.push({id:r2.id,text:taskText,date,projId,done:false,ganttStart:date,ganttEnd:date,prog:0});
+    }
+    closeAddInvoice(projId);
+    renderInvoice();renderDaily();renderGantt();
+    showToast('✓ 請款日已新增並同步');
+    if(paid) await checkAndAutoClose(projId);
+  }
+}
+
+async function checkAndAutoClose(projId){
+  const projInvs = invoices.filter(i=>String(i.projId)===String(projId));
+  if(!projInvs.length) return;
+  const allPaid = projInvs.every(i=>String(i.paid)==='true'||i.paid===true);
+  const p = projects.find(x=>String(x.id)===String(projId));
+  if(!p) return;
+  if(allPaid && p.status!=='closed'){
+    p.status='closed';
+    renderProjects(); renderInvoice();
+    const res=await api('closeProject',{id:String(projId),status:'closed'});
+    if(!res||res.error){ p.status='active'; renderProjects(); renderInvoice(); showToast('❌ 自動結案失敗'); }
+    else{ showToast('🎉 所有款項已完成，專案已自動結案！'); }
+  }
+}
+
+async function deleteInvSection(projId){
+  const p=projects.find(x=>String(x.id)===String(projId));if(!p)return;
+  const hasInvs=invoices.some(i=>String(i.projId)===String(projId));
+  const msg=hasInvs
+    ? `確定刪除「${p.name}」的所有請款紀錄？
+請款資料將一併刪除，但專案本身不受影響。`
+    : `「${p.name}」目前沒有請款紀錄，確定要從請款日分頁移除此專案嗎？`;
+  if(!confirm(msg)) return;
+  const toDelete=invoices.filter(i=>String(i.projId)===String(projId));
+  const prevInvs=[...invoices];
+  invoices=invoices.filter(i=>String(i.projId)!==String(projId));
+  renderInvoice();
+  let failed=false;
+  for(const inv of toDelete){
+    const res=await api('deleteInvoice',{id:String(inv.id)});
+    if(!res||res.error){ failed=true; }
+  }
+  if(failed){ invoices=prevInvs; renderInvoice(); showToast('❌ 部分刪除失敗，請重試'); }
+  else{ showToast(`✓ 「${p.name}」的請款紀錄已清除`); }
+}
+
+async function togglePaid(id){
+  const inv=invoices.find(i=>String(i.id)===String(id));if(!inv)return;
+  const prev=inv.paid;
+  inv.paid=!(String(inv.paid)==='true'||inv.paid===true);
+  renderInvoice();
+  const res=await api('updateInvoice',{id:String(id),paid:inv.paid});
+  if(!res||res.error){
+    inv.paid=prev;renderInvoice();showToast('❌ 更新失敗，請重試');
+  } else {
+    showToast(inv.paid?'✓ 已標記為已請款':'已取消請款');
+    if(inv.paid) await checkAndAutoClose(inv.projId);
+  }
+}
+
+async function deleteInv(id){
+  if(!confirm('確定刪除此請款紀錄？'))return;
+  const prev=[...invoices];
+  invoices=invoices.filter(i=>String(i.id)!==String(id));
+  renderInvoice();
+  const res=await api('deleteInvoice',{id:String(id)});
+  if(!res||res.error){
+    invoices=prev;renderInvoice();showToast('❌ 刪除失敗，請重試');
+  } else {
+    showToast('✓ 請款紀錄已刪除並同步');
+  }
+}
+
+function openAddRecurring(){
+  document.querySelectorAll('.inv-add-form').forEach(f=>f.classList.remove('open'));
+  document.getElementById('rec-form').classList.add('open');
+}
+
+async function saveRecurring(){
+  const projId=document.getElementById('rec-proj').value;
+  const dayOfMonth=parseInt(document.getElementById('rec-day').value);
+  const amount=document.getElementById('rec-amt').value;
+  const note=document.getElementById('rec-note').value;
+  if(!projId||!dayOfMonth||!amount){showToast('請填入所有欄位');return;}
+  if(dayOfMonth<1||dayOfMonth>28){showToast('請輸入 1~28 號');return;}
+  const res=await api('addRecurring',{projId,dayOfMonth,amount:Number(amount),note,active:true});
+  if(res&&res.id){
+    recurring.push({id:res.id,projId,dayOfMonth,amount:Number(amount),note,active:true});
+    // Inject this month and next 3 months into tasks
+    await injectRecurringTasks({id:res.id,projId,dayOfMonth,amount:Number(amount),note,active:true});
+    document.getElementById('rec-form').classList.remove('open');
+    renderInvoice();renderDaily();renderGantt();
+    showToast('✓ 固定請款已新增，並同步至待辦與甘特圖');
+  }
+}
+
+async function injectRecurringTasks(rec){
+  const proj=projects.find(p=>String(p.id)===String(rec.projId));
+  const label=`[每月請款] ${proj?proj.name:''}${rec.note?' - '+rec.note:''} ${fmt(rec.amount)}`;
+  const now=new Date(); now.setHours(0,0,0,0);
+  for(let m=0;m<4;m++){
+    const d=new Date(now.getFullYear(), now.getMonth()+m, rec.dayOfMonth);
+    if(d<now) continue;
+    const ds=d.toISOString().slice(0,10);
+    const already=tasks.find(t=>t.text===label&&t.date===ds);
+    if(already) continue;
+    const r=await api('addTask',{text:label,date:ds,projId:rec.projId,done:false,ganttStart:ds,ganttEnd:ds,prog:0});
+    if(r&&r.id) tasks.push({id:r.id,text:label,date:ds,projId:rec.projId,done:false,ganttStart:ds,ganttEnd:ds,prog:0});
+  }
+}
+
+async function deleteRec(id){
+  if(!confirm('確定刪除此固定請款？（已產生的待辦不會刪除）'))return;
+  const prev=[...recurring];
+  recurring=recurring.filter(r=>String(r.id)!==String(id));
+  renderInvoice();
+  const res=await api('deleteRecurring',{id:String(id)});
+  if(!res||res.error){
+    recurring=prev;renderInvoice();showToast('❌ 刪除失敗，請重試');
+  } else {
+    showToast('✓ 固定請款已刪除並同步');
+  }
+}
+
+function switchTab(name,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  el.classList.add('active');document.getElementById('view-'+name).classList.add('active');
+  if(name==='gantt')renderGantt();
+  if(name==='invoice'){renderInvoice();}
+}
+
+if(API_URL) syncAll(); else { renderProjects(); renderDaily(); }
+</script>
+</body>
+</html>
