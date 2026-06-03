@@ -184,6 +184,12 @@ body{font-family:system-ui,-apple-system,sans-serif;background:#f5f5f3;color:#1a
 .owner-projects{overflow:hidden;transition:max-height .2s ease}
 .proj-owner-badge{font-size:9px;color:#aaa;padding:0 6px;border-radius:8px;background:#f0f0ed;white-space:nowrap;flex-shrink:0;display:none}
 .proj-item:hover .proj-owner-badge{display:block}
+
+.gantt-edit-modal{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;display:flex;align-items:center;justify-content:center}
+.gantt-edit-box{background:#fff;border-radius:14px;padding:20px;width:440px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.gantt-edit-box h3{font-size:14px;font-weight:500;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+.gantt-bar:hover{opacity:.82;cursor:pointer}
+.gantt-row-label:hover{background:#f5f5f3;cursor:pointer}
 </style>
 </head>
 <body>
@@ -1569,9 +1575,140 @@ async function addGanttTask(){
   if(!name||!start||!end){showToast('請填入名稱及日期');return;}
   if(start>end){showToast('結束日期不能早於開始');return;}
   const res=await api('addTask',{text:name,date:start,projId,done:false,ganttStart:start,ganttEnd:end,prog});
-  if(res&&res.id){tasks.push({id:String(res.id),text:name,date:start,projId:String(projId),done:false,ganttStart:start,ganttEnd:end,prog});toggleAddForm();renderGantt();renderProjects();showToast('✓ 任務已新增至甘特圖');}
+  if(res&&res.id){
+    const newTask={id:String(res.id),text:name,date:start,projId:String(projId),done:false,ganttStart:start,ganttEnd:end,prog,tagColor:'none',repeat:'none',repeatRule:''};
+    tasks.push(newTask);
+    toggleAddForm();renderGantt();renderProjects();
+    showToast('✓ 任務已新增至甘特圖');
+    // Auto sync to daily todos
+    await syncGanttToDaily(newTask);
+  }
   else if(res&&res.error){showToast('❌ 新增失敗：'+res.error);}
 }
+
+// ── Gantt Edit Modal ──────────────────────────────────────
+function openGanttEdit(taskId){
+  document.querySelectorAll('.gantt-edit-modal').forEach(m=>m.remove());
+  const t=tasks.find(x=>String(x.id)===String(taskId)); if(!t) return;
+
+  const overlay=document.createElement('div');
+  overlay.className='gantt-edit-modal';
+  overlay.onclick=e=>{ if(e.target===overlay) overlay.remove(); };
+
+  const projOptions=projects.filter(p=>p.status!=='closed')
+    .map(p=>`<option value="${p.id}"${String(t.projId)===String(p.id)?'selected':''}>${p.name}</option>`).join('');
+
+  overlay.innerHTML=`
+  <div class="gantt-edit-box">
+    <h3><i class="ti ti-chart-gantt" style="color:#4F7BE9"></i> 編輯甘特圖任務</h3>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="form-group"><label>任務名稱</label>
+        <input type="text" id="ge-name" value="${t.text}" style="padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;width:100%;font-family:inherit">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-group"><label>開始日期</label>
+          <input type="date" id="ge-start" value="${t.ganttStart}">
+        </div>
+        <div class="form-group"><label>結束日期</label>
+          <input type="date" id="ge-end" value="${t.ganttEnd}">
+        </div>
+      </div>
+      <div class="form-group"><label>所屬專案</label>
+        <select id="ge-proj">${projOptions}</select>
+      </div>
+      <div class="form-group"><label>進度 (<span id="ge-prog-v">${Math.round(t.prog||0)}</span>%)</label>
+        <input type="range" id="ge-prog" min="0" max="100" value="${Math.round(t.prog||0)}" step="5"
+          oninput="document.getElementById('ge-prog-v').textContent=this.value">
+      </div>
+      <div style="padding:10px;background:#f5f5f3;border-radius:8px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+          <input type="checkbox" id="ge-sync-daily" checked style="cursor:pointer">
+          <span>同步新增至每日待辦（每週一到週五）</span>
+        </label>
+        <div style="font-size:10px;color:#aaa;margin-top:4px;padding-left:22px">勾選後會在開始到結束日期間的平日自動建立待辦</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px">
+      <button class="g-btn" style="color:#E24B4A;border-color:#E24B4A" onclick="deleteGanttTask('${t.id}')">
+        <i class="ti ti-trash"></i> 刪除
+      </button>
+      <div style="display:flex;gap:8px">
+        <button class="g-btn" onclick="document.querySelector('.gantt-edit-modal').remove()">取消</button>
+        <button class="g-btn primary" onclick="saveGanttEdit('${t.id}')">儲存</button>
+      </div>
+    </div>
+  </div>`;
+
+  document.body.appendChild(overlay);
+}
+
+async function saveGanttEdit(taskId){
+  const t=tasks.find(x=>String(x.id)===String(taskId)); if(!t) return;
+  const name=document.getElementById('ge-name').value.trim();
+  const start=document.getElementById('ge-start').value;
+  const end=document.getElementById('ge-end').value;
+  const projId=document.getElementById('ge-proj').value;
+  const prog=parseInt(document.getElementById('ge-prog').value)||0;
+  const syncDaily=document.getElementById('ge-sync-daily').checked;
+
+  if(!name||!start||!end){showToast('請填入所有必填欄位');return;}
+  if(start>end){showToast('結束日期不能早於開始');return;}
+
+  const prev={text:t.text,ganttStart:t.ganttStart,ganttEnd:t.ganttEnd,projId:t.projId,prog:t.prog};
+  t.text=name; t.ganttStart=start; t.ganttEnd=end;
+  t.projId=String(projId); t.prog=prog; t.date=start;
+
+  document.querySelector('.gantt-edit-modal')?.remove();
+  renderGantt(); renderDaily(); renderProjects();
+
+  const res=await api('updateTask',{id:String(t.id),text:name,date:start,ganttStart:start,ganttEnd:end,projId,prog});
+  if(!res||res.error){
+    Object.assign(t,prev); renderGantt(); renderDaily();
+    showToast('❌ 儲存失敗');return;
+  }
+
+  // Sync to daily todos if checked
+  if(syncDaily){
+    await syncGanttToDaily(t);
+  }
+  showToast('✓ 甘特圖任務已更新');
+}
+
+async function syncGanttToDaily(t){
+  const start=dateOf(t.ganttStart);
+  const end=dateOf(t.ganttEnd);
+  // Find existing daily tasks with same text+projId to avoid duplicates
+  const existing=new Set(tasks.filter(x=>x.text===t.text&&String(x.projId)===String(t.projId)&&x.id!==t.id).map(x=>x.date));
+  let d=new Date(start); let added=0;
+  while(d<=end){
+    const dow=d.getDay();
+    if(dow>=1&&dow<=5){ // Mon-Fri only
+      const ds=fmtDate(d);
+      if(!existing.has(ds)){
+        const res=await api('addTask',{text:t.text,date:ds,projId:t.projId,done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'',repeat:'none',repeatRule:''});
+        if(res&&res.id){
+          tasks.push({id:String(res.id),text:t.text,date:ds,projId:String(t.projId),done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'none',repeat:'none',repeatRule:''});
+          added++;
+        }
+      }
+    }
+    d.setDate(d.getDate()+1);
+  }
+  if(added>0){renderDaily();renderProjects();showToast(`✓ 已新增 ${added} 筆每日待辦`);}
+  else{showToast('待辦已存在，無需重複新增');}
+}
+
+async function deleteGanttTask(taskId){
+  if(!confirm('確定刪除此甘特圖任務？')) return;
+  document.querySelector('.gantt-edit-modal')?.remove();
+  const prev=[...tasks];
+  tasks=tasks.filter(t=>String(t.id)!==String(taskId));
+  renderGantt(); renderDaily(); renderProjects();
+  const res=await api('deleteTask',{id:String(taskId)});
+  if(!res||res.error){tasks=prev;renderGantt();renderDaily();renderProjects();showToast('❌ 刪除失敗');}
+  else{showToast('✓ 任務已刪除');}
+}
+// ─────────────────────────────────────────────────────────
 
 function renderGantt(){
   const scale=document.getElementById('gantt-scale').value;
@@ -1579,7 +1716,23 @@ function renderGantt(){
   const startDate=dateOf(document.getElementById('gantt-start').value)||addDays(today,-3);
   const endDate=addDays(startDate,days-1);
   const todayS=fmtDate(today);
-  const ganttTasks=filteredTasks().filter(t=>normDate(t.ganttStart)&&normDate(t.ganttEnd));
+
+  // Update owner filter dropdown
+  const ownerSel=document.getElementById('gantt-owner-filter');
+  if(ownerSel){
+    const curOwner=ownerSel.value;
+    const owners=[...new Set(projects.filter(p=>p.owner).map(p=>p.owner))].sort();
+    ownerSel.innerHTML='<option value="">全部</option>'+owners.map(o=>`<option value="${o}"${o===curOwner?'selected':''}>${o===currentUser?o+' (我)':o}</option>`).join('');
+  }
+  const ownerFilter=ownerSel?ownerSel.value:'';
+
+  // Filter tasks: respect activeProject, activeOwnerFilter, AND gantt owner filter
+  let ganttTasks=filteredTasks().filter(t=>normDate(t.ganttStart)&&normDate(t.ganttEnd));
+  if(ownerFilter){
+    const ownerProjIds=projects.filter(p=>p.owner===ownerFilter).map(p=>String(p.id));
+    ganttTasks=ganttTasks.filter(t=>ownerProjIds.includes(String(t.projId)));
+  }
+
   const DW=scale==='quarter'?18:scale==='month'?26:44;
   const totalW=190+days*DW;
   let html=`<div style="min-width:${totalW}px">`;
@@ -1590,7 +1743,7 @@ function renderGantt(){
     html+=`<div class="gantt-day-head${isT?' tc':''}" style="width:${DW}px">${lbl}</div>`;
   }
   html+=`</div></div>`;
-  if(!ganttTasks.length){html+=`<div class="empty-state">尚無甘特圖任務</div>`;}
+  if(!ganttTasks.length){html+=`<div class="empty-state">尚無甘特圖任務<br><small style="color:#bbb">切換負責人篩選或新增任務</small></div>`;}
   else ganttTasks.forEach(t=>{
     const proj=projects.find(p=>String(p.id)===String(t.projId)),color=proj?proj.color:'#888';
     const ts=dateOf(t.ganttStart),te=dateOf(t.ganttEnd);
@@ -1599,11 +1752,23 @@ function renderGantt(){
     const barLeft=Math.max(startDiff*DW,0);
     const barW=Math.min(Math.max(dur*DW-2,4),days*DW-barLeft-2);
     const visible=te>=startDate&&ts<=endDate;
+    const progPct=Math.round(t.prog||0);
     html+=`<div class="gantt-row" style="min-width:${totalW}px">
-      <div class="gantt-row-label"><div class="proj-dot" style="background:${color}"></div><div style="min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${t.text}</div>${proj?`<div style="font-size:10px;color:#888">${proj.name}</div>`:''}</div></div>
+      <div class="gantt-row-label" onclick="openGanttEdit('${t.id}')" title="點擊編輯">
+        <div class="proj-dot" style="background:${color}"></div>
+        <div style="min-width:0;flex:1">
+          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${t.text}</div>
+          <div style="font-size:10px;color:#888;display:flex;gap:6px;align-items:center">
+            ${proj?`<span>${proj.name}</span>`:''}
+            <span style="color:#bbb">${t.ganttStart}~${t.ganttEnd}</span>
+            ${progPct?`<span style="color:#4FBE82">${progPct}%</span>`:''}
+          </div>
+        </div>
+        <i class="ti ti-pencil" style="font-size:10px;color:#ccc;flex-shrink:0"></i>
+      </div>
       <div class="gantt-timeline-row">`;
     for(let i=0;i<days;i++){const ds=fmtDate(addDays(startDate,i));html+=`<div class="gantt-cell${ds===todayS?' tc':''}" style="width:${DW}px"></div>`;}
-    if(visible&&barW>0)html+=`<div class="gantt-bar" style="left:${barLeft+1}px;width:${barW}px;background:${color}"><div class="gantt-prog" style="width:${Math.round(t.prog||0)}%"></div><span style="position:relative;z-index:1">${barW>60?t.text:''}</span></div>`;
+    if(visible&&barW>0)html+=`<div class="gantt-bar" style="left:${barLeft+1}px;width:${barW}px;background:${color}" onclick="openGanttEdit('${t.id}')"><div class="gantt-prog" style="width:${progPct}%"></div><span style="position:relative;z-index:1">${barW>60?t.text:''}</span></div>`;
     html+=`</div></div>`;
   });
   html+='</div>';
