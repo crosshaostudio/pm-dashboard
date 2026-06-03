@@ -1423,12 +1423,14 @@ async function quickAdd(input,date){
   const res=await api('addTask',{text,date,projId,done:false,prog:0});
   input.disabled=false;
   if(res&&res.id){
-    tasks.push({id:String(res.id),text,date,projId:String(projId),done:false,prog:0,ganttStart:'',ganttEnd:''});
+    tasks.push({id:String(res.id),text,date,projId:String(projId),done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'none',repeat:'none',repeatRule:''});
     renderDaily();renderProjects();
-    showToast('✓ 已新增並同步');
+    showToast('✓ 已新增並同步 (id:'+res.id+')');
   } else {
     input.value=text;
-    showToast('❌ 新增失敗，請重試');
+    const errMsg=res?JSON.stringify(res):'no response';
+    showToast('❌ 新增失敗：'+errMsg);
+    console.error('[quickAdd] failed:', res);
   }
 }
 
