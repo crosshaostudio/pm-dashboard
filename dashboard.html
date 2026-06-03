@@ -377,7 +377,12 @@ async function syncAll(){
   const [t,p,m,n,r]=await Promise.all([
     api('getTasks'),api('getProjects'),api('getMembers'),api('getNotifs'),api('getReminders')
   ]);
-  if(t) tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),date:normDate(x.date),ganttStart:normDate(x.ganttStart),ganttEnd:normDate(x.ganttEnd),tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',repeatRule:x.repeatRule||''})); if(p) projects=p.map(x=>({...x,id:String(x.id),status:x.status||'proposal',owner:x.owner||''})); if(m) members=m;
+  if(t){
+    console.log('[sync] raw tasks from Sheets:', t.length, 'first:', JSON.stringify(t[0]));
+    tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),date:normDate(x.date),ganttStart:normDate(x.ganttStart),ganttEnd:normDate(x.ganttEnd),tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',repeatRule:x.repeatRule||''}));
+    console.log('[sync] after normDate:', tasks.length, 'first date:', tasks[0]&&tasks[0].date);
+  }
+  if(p) projects=p.map(x=>({...x,id:String(x.id),status:x.status||'proposal',owner:x.owner||''})); if(m) members=m;
   if(n) notifications=n; if(r) reminders=r;
 
   if(!projects.length){
