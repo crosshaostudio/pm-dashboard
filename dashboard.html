@@ -401,7 +401,11 @@ async function api(action, body={}) {
     });
     const data = await res.json();
     if(data && data.code===401){setStatus('err','Token 錯誤');showToast('Token 錯誤，請確認');return null;}
-    if(data && data.code===403){showToast('⛔ 權限不足（'+currentRole+'）');return null;}
+    if(data && data.code===403){
+      const msg=data.error||'權限不足';
+      showToast('⛔ '+msg);
+      return null;
+    }
     if(data && data.error){console.warn('[API error]', action, data.error);}
     // Update role from response
     if(data && data._role && data._role!==currentRole){
@@ -832,8 +836,8 @@ function renderProjects(){
     actions.className='proj-actions';
     actions.style.cssText='display:none;gap:2px;align-items:center;flex-shrink:0';
     actions.innerHTML=`
-      <button class="task-action-btn" title="指派負責人" onclick="openOwnerPicker('${p.id}',event)" style="font-size:12px"><i class="ti ti-user-circle" aria-hidden="true"></i></button>
-      <button class="task-action-btn" title="刪除專案" onclick="deleteProjectById('${p.id}',event)" style="font-size:12px;color:#E24B4A"><i class="ti ti-trash" aria-hidden="true"></i></button>`;
+      ${currentRole==='owner'?`<button class="task-action-btn" title="指派負責人" onclick="openOwnerPicker('${p.id}',event)" style="font-size:12px"><i class="ti ti-user-circle" aria-hidden="true"></i></button>`:''}
+      ${currentRole==='owner'?`<button class="task-action-btn" title="刪除專案" onclick="deleteProjectById('${p.id}',event)" style="font-size:12px;color:#E24B4A"><i class="ti ti-trash" aria-hidden="true"></i></button>`:''}`;
 
     el.onmouseenter=()=>{ actions.style.display='flex'; count.style.display='none'; };
     el.onmouseleave=()=>{ actions.style.display='none'; count.style.display=''; };
@@ -1499,12 +1503,21 @@ function renderTaskEl(t){
   const isDone=t.done===true||String(t.done)==='true';
   const tc=getTagColor(t.tagColor||'none');
   const isDark=tc.id==='black';
+  // For editors: check if they own this task's project
+  const taskProj=projects.find(p=>String(p.id)===String(t.projId));
+  const editorCanEdit=currentRole==='editor'&&taskProj&&(taskProj.owner||'')===currentUser;
+  const isReadOnly=currentRole==='viewer'||(currentRole==='editor'&&!editorCanEdit);
   const el=document.createElement('div');
-  el.className='task-item';el.draggable=true;
+  el.className='task-item';
+  el.draggable=!isReadOnly;
   el.style.background=tc.bg;
   el.style.borderLeftColor=tc.border;
   if(isDark) el.style.color='#fff';
-  el.ondragstart=e=>e.dataTransfer.setData('text/plain',String(t.id));
+  if(isReadOnly&&currentRole==='editor') el.style.opacity='.6';
+  el.ondragstart=e=>{
+    if(isReadOnly){e.preventDefault();return;}
+    e.dataTransfer.setData('text/plain',String(t.id));
+  };
 
   const textDiv=document.createElement('div');
   textDiv.className='task-text'+(isDone?' done':'');
@@ -1570,6 +1583,7 @@ function renderTaskEl(t){
   const actionsDiv=document.createElement('div');
   actionsDiv.className='task-actions';
   actionsDiv.style.position='relative';
+  if(isReadOnly) { el.appendChild(checkDiv); el.appendChild(metaWrap); el.appendChild(actionsDiv); return el; }
   const btnColor=isDark?'rgba(255,255,255,.7)':'#aaa';
   const btnHoverBg=isDark?'rgba(255,255,255,.15)':'#eee';
   actionsDiv.innerHTML=`
@@ -1734,8 +1748,13 @@ async function moveTask(id){
 async function addProject(){
   const name=prompt('專案名稱：');if(!name)return;
   const color=COLORS[projects.length%COLORS.length];
-  const res=await api('addProject',{name,color,members:[0]});
-  if(res&&res.id){projects.push({id:String(res.id),name,color});renderProjects();showToast('✓ 專案已建立並同步');}
+  // Auto-assign current user as owner
+  const res=await api('addProject',{name,color,members:[0],owner:currentUser});
+  if(res&&res.id){
+    projects.push({id:String(res.id),name,color,status:'proposal',owner:res.owner||currentUser});
+    renderProjects();
+    showToast('✓ 專案已建立，自動指派給：'+( res.owner||currentUser));
+  }
   else if(res&&res.error){showToast('❌ 建立失敗：'+res.error);}
 }
 
