@@ -1006,14 +1006,12 @@ async function startRename(proj, labelEl){
 }
 
 function getExpandedOwners(){
-  // Returns list of owner names whose sections are currently expanded
   const collapsed=getCollapsedOwners();
   const allOwners=[...new Set(projects.filter(p=>p.status!=='closed').map(p=>p.owner||'未指派'))];
   return allOwners.filter(o=>!collapsed[o.replace(/\s/g,'_')]);
 }
 
 function filteredProjects(includeAll=false){
-  // Projects visible based on collapse state + activeOwnerFilter + activeProject
   let base=projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
   if(!includeAll){
     const expanded=getExpandedOwners();
@@ -1025,15 +1023,20 @@ function filteredProjects(includeAll=false){
 
 function filteredTasks(){
   let base=tasks;
-  const visibleProjIds=filteredProjects().map(p=>String(p.id));
 
-  // Respect collapse: only show tasks of expanded owner sections
-  base=base.filter(t=>visibleProjIds.includes(String(t.projId)));
-
+  // Only apply collapse filter when there IS an activeOwnerFilter or activeProject
+  // — otherwise show ALL tasks regardless of collapse state
   if(activeOwnerFilter){
     const ownerProjIds=projects.filter(p=>(p.owner||'未指派')===activeOwnerFilter&&p.status!=='closed').map(p=>String(p.id));
     base=base.filter(t=>ownerProjIds.includes(String(t.projId)));
+  } else if(activeProject) {
+    // Only filter by project
+  } else {
+    // No filter active: show all tasks from non-closed projects
+    const activeProjIds=projects.filter(p=>p.status!=='closed'&&p.status!=='deleted').map(p=>String(p.id));
+    base=base.filter(t=>activeProjIds.includes(String(t.projId))||!t.projId);
   }
+
   if(activeProject){
     const apStr=String(activeProject);
     base=base.filter(t=>String(t.projId)===apStr);
@@ -2081,9 +2084,16 @@ async function syncGanttToDaily(t){
     }
   });
 
-  // Filter out already-existing daily tasks for same text+projId
+  // Find existing daily tasks created from this gantt task
+  // We identify them by matching text AND projId AND no ganttStart (pure daily tasks)
+  // AND date being exactly startDs or endDs — don't over-filter
   const existing=new Set(
-    tasks.filter(x=>x.text===t.text&&String(x.projId)===String(t.projId)&&String(x.id)!==String(t.id)).map(x=>normDate(x.date))
+    tasks.filter(x=>
+      String(x.id)!==String(t.id) &&
+      String(x.projId)===String(t.projId) &&
+      !x.ganttStart &&
+      (x.text===t.text || x.text.startsWith(t.text+'（'))
+    ).map(x=>normDate(x.date))
   );
 
   let added=0;
@@ -2493,9 +2503,10 @@ function renderInvoice(){
   // Respect left sidebar collapse state — show only expanded owners' projects
   const allActiveProjs = projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
   const expandedOwners = getExpandedOwners();
+  // Only filter by expanded owners when actively filtering; otherwise show all
   const activeProjs = activeOwnerFilter
     ? allActiveProjs.filter(p=>(p.owner||'未指派')===activeOwnerFilter)
-    : allActiveProjs.filter(p=>expandedOwners.includes(p.owner||'未指派'));
+    : allActiveProjs;
   const closedProjs = projects.filter(p=>p.status==='closed');
 
   function makeInvCard(p, isClosed){
