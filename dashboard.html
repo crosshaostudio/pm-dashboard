@@ -2970,13 +2970,19 @@ function switchTab(name,el){
 }
 
 // Auto-fill inputs and connect on load
-(function(){
+document.addEventListener('DOMContentLoaded', function(){
   const ui=document.getElementById('api-url');
   const ti=document.getElementById('api-token');
-  if(ui&&API_URL){ ui.value=API_URL; }
-  if(ti&&ACCESS_TOKEN){ ti.value=ACCESS_TOKEN; }
+  const storedUrl=localStorage.getItem('pm_api_url')||'';
+  const storedTok=localStorage.getItem('pm_token')||'';
+  // Update globals in case they were read before storage was ready
+  if(storedUrl) API_URL=storedUrl;
+  if(storedTok) ACCESS_TOKEN=storedTok;
+  if(ui) ui.value=API_URL;
+  if(ti) ti.value=ACCESS_TOKEN;
+  console.log('[init] API_URL='+API_URL.slice(0,30)+'... TOKEN='+ACCESS_TOKEN.slice(0,8)+'...');
   if(API_URL){ syncAll(); } else { renderProjects(); renderDaily(); }
-})();
+});
 </script>
 </body>
 </html>
