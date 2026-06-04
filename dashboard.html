@@ -2030,11 +2030,11 @@ function openGanttHelp(){
      desc:'在時間軸格子上雙擊，可輸入備註文字並選擇顏色。有備註的格子顯示彩色小圓點，滑鼠移上去會顯示備註內容。新增備註後，該日期也會自動在每日待辦建立一筆帶備註的項目。'},
     {icon:'ti-alarm',bg:'#FCEBEB',ic:'#791F1F',
      title:'提醒通知',
-     desc:'系統每次開啟或同步時自動偵測重要時間點，並在右上角通知鈴鐺顯示提示：
-・開始前一天 → 藍色「明天開始」
-・開始當天 → 綠色「今天開始」
-・結束前三天 → 橙色「3天後截止」
-・結束前一天 → 紅色「明天截止」'},
+     desc:'系統每次開啟或同步時自動偵測重要時間點，並在右上角通知鈴鐺顯示提示：' +
+       '<br>・開始前一天 → 藍色「明天開始」' +
+       '<br>・開始當天 → 綠色「今天開始」' +
+       '<br>・結束前三天 → 橙色「3天後截止」' +
+       '<br>・結束前一天 → 紅色「明天截止」'},
     {icon:'ti-user',bg:'#E6F1FB',ic:'#0C447C',
      title:'負責人篩選',
      desc:'工具列的「負責人」下拉選單可篩選只顯示特定人的專案任務，搭配左側欄的負責人區塊收合使用。'},
@@ -2062,8 +2062,7 @@ function openGanttHelp(){
       </div>
       <div>
         <div class="gantt-help-title">${item.title}</div>
-        <div class="gantt-help-desc">${item.desc.replace(/
-/g,'<br>')}</div>
+        <div class="gantt-help-desc">${item.desc}</div>
       </div>
     </div>`).join('')}
   </div>`;
