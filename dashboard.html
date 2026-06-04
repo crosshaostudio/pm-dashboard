@@ -206,6 +206,18 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
 
 body[data-role='viewer'] .proj-status-select { pointer-events:none; opacity:.6; }
 body[data-role='editor'] .add-proj-btn { display:none !important; }
+
+.gantt-ended-section{border-top:2px dashed #e5e5e0;margin-top:4px}
+.gantt-ended-header{display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;font-size:11px;color:#aaa;background:#fafaf8;border-bottom:0.5px solid #e5e5e0;user-select:none}
+.gantt-ended-header:hover{background:#f5f5f3}
+.gantt-group-header{display:flex;align-items:center;gap:6px;padding:5px 12px;cursor:pointer;background:#f5f5f3;border-bottom:0.5px solid #e5e5e0;font-size:11px;font-weight:500;color:#666;min-height:28px;user-select:none}
+.gantt-group-header:hover{background:#eeeeec}
+.gantt-row.dragging{opacity:.4}
+.gantt-row.drag-over{border-top:2px solid #378ADD}
+.gantt-cell-note{position:absolute;inset:0;cursor:pointer}
+.gantt-cell-dot{width:5px;height:5px;border-radius:50%;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+.gantt-note-tooltip{position:fixed;background:#1a1a18;color:#fff;font-size:11px;padding:5px 9px;border-radius:7px;max-width:200px;z-index:500;pointer-events:none;white-space:pre-wrap;line-height:1.4}
+.gantt-remind-badge{font-size:9px;padding:1px 5px;border-radius:8px;font-weight:500;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -360,6 +372,12 @@ function isOwnerCollapsed(owner){
   return !!state[owner.replace(/\s/g,'_')];
 }
 let activeProject=null, ganttFormOpen=false;
+let ganttEndedCollapsed = JSON.parse(localStorage.getItem('pm_gantt_ended_collapsed')||'false');
+let ganttGroupCollapsed = JSON.parse(localStorage.getItem('pm_gantt_group_collapsed')||'{}');
+let ganttOrder = JSON.parse(localStorage.getItem('pm_gantt_order')||'[]');
+let ganttGroups = JSON.parse(localStorage.getItem('pm_gantt_groups')||'{}'); // {taskId: groupName}
+let ganttCellNotes = JSON.parse(localStorage.getItem('pm_gantt_notes')||'{}'); // {'taskId_date': {note,color}}
+
 
 const today=new Date(); today.setHours(0,0,0,0);
 function fmtDate(d){return d.toISOString().slice(0,10)}
@@ -441,6 +459,7 @@ async function syncAll(){
   const roleCheck=await api('getProjects');
   if(roleCheck&&roleCheck._role) currentRole=roleCheck._role;
   applyRoleUI();
+  checkGanttReminders();
   const [t,p,m,n,r]=await Promise.all([
     api('getTasks'),api('getProjects'),api('getMembers'),api('getNotifs'),api('getReminders')
   ]);
@@ -1786,6 +1805,181 @@ async function addGanttTask(){
 }
 
 // ── Gantt Edit Modal ──────────────────────────────────────
+// ── Gantt helper functions ────────────────────────────────
+
+function toggleGanttEnded(){
+  ganttEndedCollapsed=!ganttEndedCollapsed;
+  localStorage.setItem('pm_gantt_ended_collapsed',JSON.stringify(ganttEndedCollapsed));
+  renderGantt();
+}
+
+function toggleGanttGroup(name){
+  ganttGroupCollapsed[name]=!ganttGroupCollapsed[name];
+  localStorage.setItem('pm_gantt_group_collapsed',JSON.stringify(ganttGroupCollapsed));
+  renderGantt();
+}
+
+// ── Drag & Drop for task rows ──
+let _ganttDragId=null, _ganttDragGroup=null;
+
+function ganttDragStart(e,taskId){
+  _ganttDragId=taskId; _ganttDragGroup=null;
+  e.dataTransfer.effectAllowed='move';
+  setTimeout(()=>{ const el=e.target.closest('.gantt-row'); if(el) el.classList.add('dragging'); },0);
+}
+function ganttGroupDragStart(e,gName){
+  _ganttDragGroup=gName; _ganttDragId=null;
+  e.dataTransfer.effectAllowed='move';
+}
+function ganttDragOver(e,targetId){
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.gantt-row.drag-over,.gantt-group-header.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  const el=e.currentTarget; if(el) el.classList.add('drag-over');
+}
+function ganttDragLeave(e){
+  e.currentTarget?.classList.remove('drag-over');
+}
+function ganttDrop(e,targetTaskId){
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.gantt-row,.gantt-group-header').forEach(el=>el.classList.remove('drag-over','dragging'));
+
+  if(_ganttDragId&&_ganttDragId!==targetTaskId){
+    // Reorder tasks
+    const allIds=[...new Set([...tasks.filter(t=>t.ganttStart&&t.ganttEnd).map(t=>String(t.id))])];
+    let order=ganttOrder.length?[...ganttOrder]:[...allIds];
+    // Ensure all ids are in order
+    allIds.forEach(id=>{ if(!order.includes(id)) order.push(id); });
+    const fromIdx=order.indexOf(_ganttDragId);
+    const toIdx=order.indexOf(targetTaskId);
+    if(fromIdx>=0&&toIdx>=0){
+      order.splice(fromIdx,1);
+      order.splice(toIdx,0,_ganttDragId);
+      ganttOrder=order;
+      localStorage.setItem('pm_gantt_order',JSON.stringify(ganttOrder));
+    }
+  }
+  _ganttDragId=null; _ganttDragGroup=null;
+  renderGantt();
+}
+function ganttGroupDrop(e,targetGroup){
+  e.preventDefault(); e.stopPropagation();
+  document.querySelectorAll('.gantt-row,.gantt-group-header').forEach(el=>el.classList.remove('drag-over','dragging'));
+  if(!_ganttDragId) return;
+  // Move task to group
+  ganttGroups[_ganttDragId]=targetGroup||'';
+  if(!targetGroup) delete ganttGroups[_ganttDragId];
+  localStorage.setItem('pm_gantt_groups',JSON.stringify(ganttGroups));
+  _ganttDragId=null; renderGantt();
+}
+
+// Right-click on label to assign/remove group
+document.addEventListener('contextmenu',function(e){
+  const row=e.target.closest('.gantt-row');
+  if(!row) return;
+  const taskId=row.dataset.taskId;
+  if(!taskId) return;
+  e.preventDefault();
+  const cur=ganttGroups[taskId]||'';
+  const gName=prompt('設定群組名稱（留空移出群組）：',cur);
+  if(gName===null) return;
+  if(gName.trim()){ganttGroups[taskId]=gName.trim();}
+  else{delete ganttGroups[taskId];}
+  localStorage.setItem('pm_gantt_groups',JSON.stringify(ganttGroups));
+  renderGantt();
+});
+
+// ── Cell notes ──
+let _noteTooltip=null;
+
+function editCellNote(taskId,ds){
+  const key=taskId+'_'+ds;
+  const existing=ganttCellNotes[key]||{note:'',color:'#378ADD'};
+  // Show inline popup
+  const old=document.getElementById('cell-note-popup');
+  if(old) old.remove();
+
+  const popup=document.createElement('div');
+  popup.id='cell-note-popup';
+  popup.style.cssText='position:fixed;z-index:600;background:#fff;border:0.5px solid #ddd;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.15);padding:12px;width:220px';
+  popup.innerHTML=`
+    <div style="font-size:11px;font-weight:500;color:#555;margin-bottom:8px">${ds} 備註</div>
+    <textarea id="cnp-text" rows="3" style="width:100%;font-size:12px;border:0.5px solid #ddd;border-radius:6px;padding:5px 8px;font-family:inherit;resize:none;outline:none">${existing.note}</textarea>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+      <label style="font-size:11px;color:#888">顏色</label>
+      <input type="color" id="cnp-color" value="${existing.color||'#378ADD'}" style="width:28px;height:24px;border:none;cursor:pointer;border-radius:4px">
+      <div style="flex:1"></div>
+      <button class="g-btn" style="font-size:11px;padding:3px 8px;color:#E24B4A" onclick="deleteCellNote('${key}')">清除</button>
+      <button class="g-btn primary" style="font-size:11px;padding:3px 8px" onclick="saveCellNote('${key}')">儲存</button>
+    </div>`;
+  document.body.appendChild(popup);
+
+  // Position near cursor
+  const x=Math.min(event.clientX,window.innerWidth-230);
+  const y=Math.min(event.clientY,window.innerHeight-160);
+  popup.style.left=x+'px'; popup.style.top=y+'px';
+
+  setTimeout(()=>document.addEventListener('click',function h(ev){
+    if(!popup.contains(ev.target)){popup.remove();document.removeEventListener('click',h);}
+  }),0);
+}
+
+async function saveCellNote(key){
+  const text=document.getElementById('cnp-text')?.value.trim();
+  const color=document.getElementById('cnp-color')?.value||'#378ADD';
+  if(text){ ganttCellNotes[key]={note:text,color}; }
+  else { delete ganttCellNotes[key]; }
+  localStorage.setItem('pm_gantt_notes',JSON.stringify(ganttCellNotes));
+  document.getElementById('cell-note-popup')?.remove();
+  renderGantt();
+
+  // If note added, sync that date to daily todos
+  if(text){
+    const [taskId,ds]=key.split('_');
+    const t=tasks.find(x=>String(x.id)===taskId);
+    if(t&&ds){
+      const existing=tasks.find(x=>x.text===`${t.text}（${text}）`&&normDate(x.date)===ds&&String(x.projId)===String(t.projId));
+      if(!existing){
+        const res=await api('addTask',{
+          text:`${t.text}（${text}）`, date:ds, projId:String(t.projId),
+          done:false, prog:0, ganttStart:'', ganttEnd:'',
+          tagColor:'', repeat:'none', repeatRule:''
+        });
+        if(res&&res.id){
+          tasks.push({id:String(res.id),text:`${t.text}（${text}）`,date:ds,
+            projId:String(t.projId),done:false,prog:0,ganttStart:'',ganttEnd:'',
+            tagColor:'none',repeat:'none',repeatRule:''});
+          renderDaily();renderProjects();
+          showToast('✓ 備註已加入每日待辦：'+ds);
+        }
+      }
+    }
+  }
+}
+function deleteCellNote(key){
+  delete ganttCellNotes[key];
+  localStorage.setItem('pm_gantt_notes',JSON.stringify(ganttCellNotes));
+  document.getElementById('cell-note-popup')?.remove();
+  renderGantt();
+}
+
+function showNoteTooltip(e,key){
+  const note=ganttCellNotes[key];
+  if(!note||!note.note) return;
+  hideNoteTooltip();
+  const tip=document.createElement('div');
+  tip.id='gantt-note-tip';
+  tip.className='gantt-note-tooltip';
+  tip.textContent=note.note;
+  document.body.appendChild(tip);
+  const x=Math.min(e.clientX+12,window.innerWidth-220);
+  const y=e.clientY-36;
+  tip.style.left=x+'px'; tip.style.top=y+'px';
+}
+function hideNoteTooltip(){
+  document.getElementById('gantt-note-tip')?.remove();
+}
+// ─────────────────────────────────────────────────────────
+
 function openGanttEdit(taskId){
   document.querySelectorAll('.gantt-edit-modal').forEach(m=>m.remove());
   const t=tasks.find(x=>String(x.id)===String(taskId)); if(!t) return;
@@ -1819,12 +2013,9 @@ function openGanttEdit(taskId){
         <input type="range" id="ge-prog" min="0" max="100" value="${Math.round(t.prog||0)}" step="5"
           oninput="document.getElementById('ge-prog-v').textContent=this.value">
       </div>
-      <div style="padding:10px;background:#f5f5f3;border-radius:8px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
-          <input type="checkbox" id="ge-sync-daily" checked style="cursor:pointer">
-          <span>同步新增至每日待辦（每週一到週五）</span>
-        </label>
-        <div style="font-size:10px;color:#aaa;margin-top:4px;padding-left:22px">勾選後會在開始到結束日期間的平日自動建立待辦</div>
+      <div style="padding:8px 10px;background:#f0f6ff;border-radius:8px;font-size:11px;color:#0C447C;display:flex;align-items:center;gap:6px">
+        <i class="ti ti-info-circle" style="font-size:13px;flex-shrink:0"></i>
+        儲存後自動在每日待辦新增：開始日、結束日，以及格子備註的日期
       </div>
     </div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:16px">
@@ -1848,8 +2039,6 @@ async function saveGanttEdit(taskId){
   const end=document.getElementById('ge-end').value;
   const projId=document.getElementById('ge-proj').value;
   const prog=parseInt(document.getElementById('ge-prog').value)||0;
-  const syncDaily=document.getElementById('ge-sync-daily').checked;
-
   if(!name||!start||!end){showToast('請填入所有必填欄位');return;}
   if(start>end){showToast('結束日期不能早於開始');return;}
 
@@ -1866,35 +2055,65 @@ async function saveGanttEdit(taskId){
     showToast('❌ 儲存失敗');return;
   }
 
-  // Sync to daily todos if checked
-  if(syncDaily){
-    await syncGanttToDaily(t);
-  }
+  // Always sync start/end/noted dates to daily todos
+  await syncGanttToDaily(t);
   showToast('✓ 甘特圖任務已更新');
 }
 
 async function syncGanttToDaily(t){
-  const start=dateOf(t.ganttStart);
-  const end=dateOf(t.ganttEnd);
-  // Find existing daily tasks with same text+projId to avoid duplicates
-  const existing=new Set(tasks.filter(x=>x.text===t.text&&String(x.projId)===String(t.projId)&&x.id!==t.id).map(x=>x.date));
-  let d=new Date(start); let added=0;
-  while(d<=end){
-    const dow=d.getDay();
-    if(dow>=1&&dow<=5){ // Mon-Fri only
-      const ds=fmtDate(d);
-      if(!existing.has(ds)){
-        const res=await api('addTask',{text:t.text,date:ds,projId:t.projId,done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'',repeat:'none',repeatRule:''});
-        if(res&&res.id){
-          tasks.push({id:String(res.id),text:t.text,date:ds,projId:String(t.projId),done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'none',repeat:'none',repeatRule:''});
-          added++;
-        }
-      }
+  // Collect dates to add:
+  // 1. Start date
+  // 2. End date
+  // 3. Any cell-noted dates within the range
+  const startDs=normDate(t.ganttStart);
+  const endDs=normDate(t.ganttEnd);
+  if(!startDs||!endDs) return;
+
+  const datesToAdd=new Set();
+  datesToAdd.add(startDs);
+  datesToAdd.add(endDs);
+
+  // Find all cell notes for this task
+  Object.keys(ganttCellNotes).forEach(key=>{
+    if(key.startsWith(String(t.id)+'_')){
+      const ds=key.slice(String(t.id).length+1);
+      if(ds>=startDs&&ds<=endDs) datesToAdd.add(ds);
     }
-    d.setDate(d.getDate()+1);
+  });
+
+  // Filter out already-existing daily tasks for same text+projId
+  const existing=new Set(
+    tasks.filter(x=>x.text===t.text&&String(x.projId)===String(t.projId)&&String(x.id)!==String(t.id)).map(x=>normDate(x.date))
+  );
+
+  let added=0;
+  for(const ds of [...datesToAdd].sort()){
+    if(existing.has(ds)) continue;
+    // Get note text if any
+    const noteKey=String(t.id)+'_'+ds;
+    const cellNote=ganttCellNotes[noteKey];
+    const taskText=cellNote&&cellNote.note
+      ? `${t.text}（${cellNote.note}）`
+      : t.text;
+    const tagColor=cellNote&&cellNote.color?cellNote.color:'';
+
+    const res=await api('addTask',{
+      text:taskText, date:ds, projId:String(t.projId),
+      done:false, prog:0, ganttStart:'', ganttEnd:'',
+      tagColor:'', repeat:'none', repeatRule:''
+    });
+    if(res&&res.id){
+      tasks.push({
+        id:String(res.id), text:taskText, date:ds,
+        projId:String(t.projId), done:false, prog:0,
+        ganttStart:'', ganttEnd:'', tagColor:'none',
+        repeat:'none', repeatRule:''
+      });
+      added++;
+    }
   }
-  if(added>0){renderDaily();renderProjects();showToast(`✓ 已新增 ${added} 筆每日待辦`);}
-  else{showToast('待辦已存在，無需重複新增');}
+  if(added>0){renderDaily();renderProjects();showToast(`✓ 已新增 ${added} 筆每日待辦（開始日、結束日${datesToAdd.size>2?'、備註日':''}）`);}
+  else{showToast('每日待辦已存在，無需重複新增');}
 }
 
 async function deleteGanttTask(taskId){
@@ -1909,6 +2128,52 @@ async function deleteGanttTask(taskId){
 }
 // ─────────────────────────────────────────────────────────
 
+function checkGanttReminders(){
+  const todayS=fmtDate(today);
+  const ganttTasks=tasks.filter(t=>normDate(t.ganttStart)&&normDate(t.ganttEnd));
+  const remindEvents=[];
+  ganttTasks.forEach(t=>{
+    const ts=normDate(t.ganttStart), te=normDate(t.ganttEnd);
+    const dayBefore=fmtDate(addDays(dateOf(ts),-1));
+    const dayAfterEnd=fmtDate(addDays(dateOf(te),-1));
+    const threeBefore=fmtDate(addDays(dateOf(te),-3));
+    if(dayBefore===todayS) remindEvents.push({task:t,type:'start-tomorrow',msg:`明天開始：「${t.text}」`});
+    if(ts===todayS)        remindEvents.push({task:t,type:'start-today',  msg:`今天開始：「${t.text}」`});
+    if(threeBefore===todayS) remindEvents.push({task:t,type:'end-3days', msg:`3天後截止：「${t.text}」（${te}）`});
+    if(dayAfterEnd===todayS) remindEvents.push({task:t,type:'end-tomorrow',msg:`明天截止：「${t.text}」`});
+  });
+
+  if(!remindEvents.length) return;
+
+  // Check which ones we haven't notified today
+  const notifiedKey='pm_notified_'+todayS;
+  const notified=JSON.parse(localStorage.getItem(notifiedKey)||'[]');
+  const newEvents=remindEvents.filter(e=>!notified.includes(e.task.id+'_'+e.type));
+  if(!newEvents.length) return;
+
+  // Add to notifications list
+  newEvents.forEach(e=>{
+    const typeColors={
+      'start-tomorrow':{bg:'#E6F1FB',ic:'#0C447C',icon:'ti-player-play'},
+      'start-today':   {bg:'#EAF3DE',ic:'#27500A',icon:'ti-rocket'},
+      'end-3days':     {bg:'#FFF7ED',ic:'#92400E',icon:'ti-alarm'},
+      'end-tomorrow':  {bg:'#FCEBEB',ic:'#791F1F',icon:'ti-alert-triangle'},
+    };
+    const c=typeColors[e.type]||{bg:'#f5f5f3',ic:'#555',icon:'ti-bell'};
+    notifications.unshift({id:Date.now()+Math.random(),type:'gantt-remind',
+      title:e.msg, time:'今天', read:false,
+      icon:c.icon, bg:c.bg, ic:c.ic});
+  });
+  updateBadge();
+
+  // Toast the first one
+  showToast('🔔 '+newEvents[0].msg);
+
+  // Mark as notified
+  const allNotified=[...notified,...newEvents.map(e=>e.task.id+'_'+e.type)];
+  localStorage.setItem(notifiedKey, JSON.stringify(allNotified));
+}
+
 function renderGantt(){
   const scale=document.getElementById('gantt-scale').value;
   const days=scale==='week'?14:scale==='month'?30:90;
@@ -1916,7 +2181,6 @@ function renderGantt(){
   const endDate=addDays(startDate,days-1);
   const todayS=fmtDate(today);
 
-  // Update owner filter dropdown
   const ownerSel=document.getElementById('gantt-owner-filter');
   if(ownerSel){
     const curOwner=ownerSel.value;
@@ -1925,25 +2189,41 @@ function renderGantt(){
   }
   const ownerFilter=ownerSel?ownerSel.value:'';
 
-  // Filter tasks: respect collapse state, activeProject, activeOwnerFilter, AND gantt owner filter
-  let ganttTasks=filteredTasks().filter(t=>normDate(t.ganttStart)&&normDate(t.ganttEnd));
+  let allGanttTasks=filteredTasks().filter(t=>normDate(t.ganttStart)&&normDate(t.ganttEnd));
   if(ownerFilter){
     const ownerProjIds=projects.filter(p=>p.owner===ownerFilter).map(p=>String(p.id));
-    ganttTasks=ganttTasks.filter(t=>ownerProjIds.includes(String(t.projId)));
+    allGanttTasks=allGanttTasks.filter(t=>ownerProjIds.includes(String(t.projId)));
   }
 
-  const DW=scale==='quarter'?18:scale==='month'?26:44;
-  const totalW=190+days*DW;
-  let html=`<div style="min-width:${totalW}px">`;
-  html+=`<div class="gantt-head" style="min-width:${totalW}px"><div class="gantt-label-col">任務 / 專案</div><div style="flex:1;display:flex">`;
-  for(let i=0;i<days;i++){
-    const d=addDays(startDate,i),ds=fmtDate(d),isT=ds===todayS;
-    const lbl=scale==='quarter'?(d.getDate()===1?d.toLocaleDateString('zh-TW',{month:'short'}):d.getDate()%7===1?d.getDate():''):scale==='month'?(d.getDay()===0||d.getDate()===1?d.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'}):''):d.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'});
-    html+=`<div class="gantt-day-head${isT?' tc':''}" style="width:${DW}px">${lbl}</div>`;
+  // Separate active and ended tasks
+  const activeTasks=allGanttTasks.filter(t=>dateOf(t.ganttEnd)>=today);
+  const endedTasks=allGanttTasks.filter(t=>dateOf(t.ganttEnd)<today);
+
+  // Apply saved order
+  function applyOrder(arr){
+    if(!ganttOrder.length) return arr;
+    const ordered=[], rest=[];
+    ganttOrder.forEach(id=>{ const t=arr.find(x=>String(x.id)===id); if(t) ordered.push(t); });
+    arr.forEach(t=>{ if(!ganttOrder.includes(String(t.id))) rest.push(t); });
+    return [...ordered,...rest];
   }
-  html+=`</div></div>`;
-  if(!ganttTasks.length){html+=`<div class="empty-state">尚無甘特圖任務<br><small style="color:#bbb">切換負責人篩選或新增任務</small></div>`;}
-  else ganttTasks.forEach(t=>{
+
+  // Build reminder badges
+  const remindMap={};
+  allGanttTasks.forEach(t=>{
+    const ts=normDate(t.ganttStart),te=normDate(t.ganttEnd);
+    const flags=[];
+    if(fmtDate(addDays(dateOf(ts),-1))===todayS) flags.push({label:'明天開始',color:'#0C447C',bg:'#E6F1FB'});
+    if(ts===todayS) flags.push({label:'今天開始',color:'#27500A',bg:'#EAF3DE'});
+    if(fmtDate(addDays(dateOf(te),-3))===todayS) flags.push({label:'3天後截止',color:'#92400E',bg:'#FFF7ED'});
+    if(fmtDate(addDays(dateOf(te),-1))===todayS) flags.push({label:'明天截止',color:'#791F1F',bg:'#FCEBEB'});
+    if(flags.length) remindMap[String(t.id)]=flags;
+  });
+
+  const DW=scale==='quarter'?18:scale==='month'?26:44;
+  const totalW=200+days*DW;
+
+  function renderTaskRow(t){
     const proj=projects.find(p=>String(p.id)===String(t.projId)),color=proj?proj.color:'#888';
     const ts=dateOf(t.ganttStart),te=dateOf(t.ganttEnd);
     const startDiff=Math.round((ts-startDate)/86400000);
@@ -1952,24 +2232,98 @@ function renderGantt(){
     const barW=Math.min(Math.max(dur*DW-2,4),days*DW-barLeft-2);
     const visible=te>=startDate&&ts<=endDate;
     const progPct=Math.round(t.prog||0);
-    html+=`<div class="gantt-row" style="min-width:${totalW}px">
-      <div class="gantt-row-label" onclick="openGanttEdit('${t.id}')" title="點擊編輯">
+    const remind=remindMap[String(t.id)]||[];
+    const remindBadges=remind.map(r=>`<span class="gantt-remind-badge" style="background:${r.bg};color:${r.color}">${r.label}</span>`).join('');
+
+    let cellsHtml='';
+    for(let i=0;i<days;i++){
+      const ds=fmtDate(addDays(startDate,i));
+      const noteKey=t.id+'_'+ds;
+      const note=ganttCellNotes[noteKey];
+      const cellColor=note?note.color:'';
+      cellsHtml+=`<div class="gantt-cell${ds===todayS?' tc':''}" style="width:${DW}px;position:relative;${cellColor?'background:'+cellColor+'22':''}">
+        ${note?`<div class="gantt-cell-dot" style="background:${note.color||'#378ADD'}" title="${note.note}"></div>`:''}
+        <div class="gantt-cell-note" ondblclick="editCellNote('${t.id}','${ds}')"
+          onmouseenter="showNoteTooltip(event,'${noteKey}')"
+          onmouseleave="hideNoteTooltip()"></div>
+      </div>`;
+    }
+
+    return `<div class="gantt-row" data-task-id="${t.id}" style="min-width:${totalW}px"
+      draggable="true"
+      ondragstart="ganttDragStart(event,'${t.id}')"
+      ondragover="ganttDragOver(event,'${t.id}')"
+      ondragleave="ganttDragLeave(event)"
+      ondrop="ganttDrop(event,'${t.id}')">
+      <div style="width:200px;min-width:200px;padding:5px 12px;border-right:0.5px solid #e5e5e0;flex-shrink:0;display:flex;align-items:center;gap:5px;cursor:pointer" onclick="openGanttEdit('${t.id}')">
+        <i class="ti ti-grip-vertical" style="font-size:11px;color:#ccc;cursor:grab;flex-shrink:0" onmousedown="e=>e.stopPropagation()"></i>
         <div class="proj-dot" style="background:${color}"></div>
         <div style="min-width:0;flex:1">
-          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${t.text}</div>
-          <div style="font-size:10px;color:#888;display:flex;gap:6px;align-items:center">
-            ${proj?`<span>${proj.name}</span>`:''}
-            <span style="color:#bbb">${t.ganttStart}~${t.ganttEnd}</span>
-            ${progPct?`<span style="color:#4FBE82">${progPct}%</span>`:''}
+          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;display:flex;align-items:center;gap:4px">
+            ${t.text}${remindBadges}
           </div>
+          <div style="font-size:10px;color:#888">${proj?proj.name+' · ':''}${t.ganttStart}~${t.ganttEnd}${progPct?' · '+progPct+'%':''}</div>
         </div>
         <i class="ti ti-pencil" style="font-size:10px;color:#ccc;flex-shrink:0"></i>
       </div>
-      <div class="gantt-timeline-row">`;
-    for(let i=0;i<days;i++){const ds=fmtDate(addDays(startDate,i));html+=`<div class="gantt-cell${ds===todayS?' tc':''}" style="width:${DW}px"></div>`;}
-    if(visible&&barW>0)html+=`<div class="gantt-bar" style="left:${barLeft+1}px;width:${barW}px;background:${color}" onclick="openGanttEdit('${t.id}')"><div class="gantt-prog" style="width:${progPct}%"></div><span style="position:relative;z-index:1">${barW>60?t.text:''}</span></div>`;
-    html+=`</div></div>`;
+      <div class="gantt-timeline-row" style="position:relative">
+        ${cellsHtml}
+        ${visible&&barW>0?`<div class="gantt-bar" style="left:${barLeft+1}px;width:${barW}px;background:${color}" onclick="openGanttEdit('${t.id}')"><div class="gantt-prog" style="width:${progPct}%"></div><span style="position:relative;z-index:1">${barW>60?t.text:''}</span></div>`:''}
+      </div>
+    </div>`;
+  }
+
+  // Build groups
+  const groupMap={};
+  const ungrouped=[];
+  applyOrder(activeTasks).forEach(t=>{
+    const g=ganttGroups[String(t.id)];
+    if(g){ if(!groupMap[g]) groupMap[g]=[]; groupMap[g].push(t); }
+    else ungrouped.push(t);
   });
+
+  let html=`<div style="min-width:${totalW}px">`;
+  // Header
+  html+=`<div class="gantt-head" style="min-width:${totalW}px"><div class="gantt-label-col" style="width:200px;min-width:200px">任務 / 專案</div><div style="flex:1;display:flex">`;
+  for(let i=0;i<days;i++){
+    const d=addDays(startDate,i),ds=fmtDate(d),isT=ds===todayS;
+    const lbl=scale==='quarter'?(d.getDate()===1?d.toLocaleDateString('zh-TW',{month:'short'}):d.getDate()%7===1?d.getDate():''):scale==='month'?(d.getDay()===0||d.getDate()===1?d.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'}):''):d.toLocaleDateString('zh-TW',{month:'numeric',day:'numeric'});
+    html+=`<div class="gantt-day-head${isT?' tc':''}" style="width:${DW}px">${lbl}</div>`;
+  }
+  html+=`</div></div>`;
+
+  if(!activeTasks.length&&!endedTasks.length){
+    html+=`<div class="empty-state">尚無甘特圖任務</div>`;
+  } else {
+    // Groups
+    Object.keys(groupMap).forEach(gName=>{
+      const collapsed=ganttGroupCollapsed[gName];
+      html+=`<div class="gantt-group-header" onclick="toggleGanttGroup('${gName}')"
+        draggable="true"
+        ondragstart="ganttGroupDragStart(event,'${gName}')"
+        ondragover="ganttDragOver(event,'__group__${gName}')"
+        ondrop="ganttGroupDrop(event,'${gName}')">
+        <i class="ti ${collapsed?'ti-chevron-right':'ti-chevron-down'}" style="font-size:10px"></i>
+        <span style="flex:1">${gName}</span>
+        <span style="font-size:10px;color:#bbb">${groupMap[gName].length} 項</span>
+      </div>`;
+      if(!collapsed) groupMap[gName].forEach(t=>{ html+=renderTaskRow(t); });
+    });
+    // Ungrouped
+    ungrouped.forEach(t=>{ html+=renderTaskRow(t); });
+    // Ended tasks section
+    if(endedTasks.length){
+      html+=`<div class="gantt-ended-section">
+        <div class="gantt-ended-header" onclick="toggleGanttEnded()">
+          <i class="ti ${ganttEndedCollapsed?'ti-chevron-right':'ti-chevron-down'}" style="font-size:11px"></i>
+          <span>已結束任務（${endedTasks.length} 項）</span>
+        </div>`;
+      if(!ganttEndedCollapsed){
+        endedTasks.forEach(t=>{ html+=renderTaskRow(t); });
+      }
+      html+=`</div>`;
+    }
+  }
   html+='</div>';
   document.getElementById('gantt-container').innerHTML=html;
 }
