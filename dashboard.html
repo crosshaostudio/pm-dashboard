@@ -366,8 +366,8 @@ const APP_VERSION = '20260602';
 })();
 let API_URL = localStorage.getItem('pm_api_url') || '';
 let ACCESS_TOKEN = localStorage.getItem('pm_token') || '';
-if (API_URL) document.getElementById('api-url').value = API_URL;
-setTimeout(()=>{ var ui=document.getElementById('api-url'); var ti=document.getElementById('api-token'); if(ui&&API_URL)ui.value=API_URL; if(ti&&ACCESS_TOKEN)ti.value=ACCESS_TOKEN; },50);
+
+
 
 let projects=[], tasks=[], members=[], notifications=[], reminders=[];
 let currentUser = localStorage.getItem('pm_current_user') || '我';
@@ -464,7 +464,8 @@ async function api(action, body={}) {
 }
 
 function hardReload(){
-  // Just reload the page fresh without clearing user data
+  // Mark that we should auto-reconnect after reload
+  sessionStorage.setItem('pm_auto_reconnect','1');
   location.reload(true);
 }
 
@@ -2965,6 +2966,14 @@ function switchTab(name,el){
   if(name==='gantt')renderGantt();
   if(name==='invoice'){renderInvoice();}
 }
+
+// Auto-fill inputs on every load
+(function(){
+  const ui=document.getElementById('api-url');
+  const ti=document.getElementById('api-token');
+  if(ui&&API_URL) ui.value=API_URL;
+  if(ti&&ACCESS_TOKEN) ti.value=ACCESS_TOKEN;
+})();
 
 if(API_URL) syncAll(); else { renderProjects(); renderDaily(); }
 </script>
