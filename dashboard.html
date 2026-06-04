@@ -218,6 +218,15 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
 .gantt-cell-dot{width:5px;height:5px;border-radius:50%;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
 .gantt-note-tooltip{position:fixed;background:#1a1a18;color:#fff;font-size:11px;padding:5px 9px;border-radius:7px;max-width:200px;z-index:500;pointer-events:none;white-space:pre-wrap;line-height:1.4}
 .gantt-remind-badge{font-size:9px;padding:1px 5px;border-radius:8px;font-weight:500;flex-shrink:0}
+
+.gantt-row-label-wrap:hover .gantt-row-actions{display:flex !important}
+.gantt-help-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:400;display:flex;align-items:center;justify-content:center}
+.gantt-help-box{background:#fff;border-radius:16px;padding:24px;width:540px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+.gantt-help-item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:0.5px solid #f0f0ed}
+.gantt-help-item:last-child{border-bottom:none}
+.gantt-help-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.gantt-help-title{font-size:13px;font-weight:500;color:#1a1a18;margin-bottom:2px}
+.gantt-help-desc{font-size:12px;color:#666;line-height:1.5}
 </style>
 </head>
 <body>
@@ -265,6 +274,14 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
         </select>
         <label>起始日</label>
         <input type="date" id="gantt-start" onchange="renderGantt()">
+        <label>負責人</label>
+        <select id="gantt-owner-filter" onchange="renderGantt()" style="font-size:12px;padding:5px 8px;border-radius:8px;border:0.5px solid #ddd;background:#fff">
+          <option value="">全部</option>
+        </select>
+        <button class="g-btn" onclick="openGanttHelp()" title="使用說明" style="margin-left:auto;gap:5px">
+          <i class="ti ti-help-circle" style="font-size:14px"></i>
+          <span style="font-size:12px">甘特圖使用說明</span>
+        </button>
       </div>
       <div class="add-form" id="gantt-add-form">
         <div class="form-group"><label>任務名稱</label><input type="text" id="f-name" placeholder="任務名稱"></div>
@@ -1882,21 +1899,7 @@ function ganttGroupDrop(e,targetGroup){
   _ganttDragId=null; renderGantt();
 }
 
-// Right-click on label to assign/remove group
-document.addEventListener('contextmenu',function(e){
-  const row=e.target.closest('.gantt-row');
-  if(!row) return;
-  const taskId=row.dataset.taskId;
-  if(!taskId) return;
-  e.preventDefault();
-  const cur=ganttGroups[taskId]||'';
-  const gName=prompt('設定群組名稱（留空移出群組）：',cur);
-  if(gName===null) return;
-  if(gName.trim()){ganttGroups[taskId]=gName.trim();}
-  else{delete ganttGroups[taskId];}
-  localStorage.setItem('pm_gantt_groups',JSON.stringify(ganttGroups));
-  renderGantt();
-});
+// Group assignment via hover button (see openGanttGroupPicker)
 
 // ── Cell notes ──
 let _noteTooltip=null;
@@ -1987,6 +1990,137 @@ function showNoteTooltip(e,key){
 }
 function hideNoteTooltip(){
   document.getElementById('gantt-note-tip')?.remove();
+}
+// ─────────────────────────────────────────────────────────
+
+// ── Gantt Help Modal ──────────────────────────────────────
+function openGanttHelp(){
+  const existing=document.getElementById('gantt-help-overlay');
+  if(existing){existing.remove();return;}
+  const overlay=document.createElement('div');
+  overlay.className='gantt-help-overlay';
+  overlay.id='gantt-help-overlay';
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+
+  const items=[
+    {icon:'ti-plus',bg:'#EAF3DE',ic:'#27500A',
+     title:'新增任務',
+     desc:'點左上角「新增任務」，填入名稱、開始/結束日期、所屬專案與進度後送出。系統會自動在每日待辦的開始日與結束日建立對應待辦事項。'},
+    {icon:'ti-pencil',bg:'#E6F1FB',ic:'#0C447C',
+     title:'編輯任務',
+     desc:'點擊任意甘特條或任務列，跳出編輯視窗，可修改名稱、日期、專案、進度。儲存後自動同步至每日待辦。'},
+    {icon:'ti-trash',bg:'#FCEBEB',ic:'#791F1F',
+     title:'刪除任務',
+     desc:'在編輯視窗點「刪除」可完整刪除甘特任務。若在每日待辦刪除同名項目，甘特圖不受影響。'},
+    {icon:'ti-grip-vertical',bg:'#F5F3FF',ic:'#3730A3',
+     title:'拖曳排序',
+     desc:'任務列最左側有拖曳把手（⠿），直接上下拖曳可調整顯示順序，順序存在本機瀏覽器。'},
+    {icon:'ti-layout-list',bg:'#FFF7ED',ic:'#92400E',
+     title:'設定群組',
+     desc:'滑鼠移到任務列，出現群組圖示（☰），點一下選擇現有群組或輸入新名稱。多個任務設定同一組名後，會收攏在群組標題下，可點箭頭展開/收合。也可把任務拖曳到群組標題列來移入群組。'},
+    {icon:'ti-chevron-down',bg:'#f0f0ed',ic:'#555',
+     title:'收合群組 / 已結束任務',
+     desc:'點群組標題列的箭頭可收合/展開整組任務。已過結束日的任務會自動移至底部「已結束任務」區塊，點標題可展開查看。收合狀態存在本機瀏覽器，不影響其他人。'},
+    {icon:'ti-note',bg:'#ECFDF5',ic:'#065F46',
+     title:'格子備註',
+     desc:'在時間軸格子上雙擊，可輸入備註文字並選擇顏色。有備註的格子顯示彩色小圓點，滑鼠移上去會顯示備註內容。新增備註後，該日期也會自動在每日待辦建立一筆帶備註的項目。'},
+    {icon:'ti-alarm',bg:'#FCEBEB',ic:'#791F1F',
+     title:'提醒通知',
+     desc:'系統每次開啟或同步時自動偵測重要時間點，並在右上角通知鈴鐺顯示提示：
+・開始前一天 → 藍色「明天開始」
+・開始當天 → 綠色「今天開始」
+・結束前三天 → 橙色「3天後截止」
+・結束前一天 → 紅色「明天截止」'},
+    {icon:'ti-user',bg:'#E6F1FB',ic:'#0C447C',
+     title:'負責人篩選',
+     desc:'工具列的「負責人」下拉選單可篩選只顯示特定人的專案任務，搭配左側欄的負責人區塊收合使用。'},
+    {icon:'ti-calendar-week',bg:'#EEF2FF',ic:'#3730A3',
+     title:'檢視切換',
+     desc:'週視圖（14天）、月視圖（30天）、季視圖（90天）三種時間軸，配合「起始日」可平移到任意時間段。'},
+    {icon:'ti-chart-gantt',bg:'#f0f0ed',ic:'#555',
+     title:'進度顯示',
+     desc:'每條甘特條上有半透明進度填色，長條夠寬時顯示任務名稱。在編輯視窗可調整 0~100% 進度。'},
+  ];
+
+  overlay.innerHTML=`
+  <div class="gantt-help-box">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div>
+        <h2 style="font-size:16px;font-weight:600;color:#1a1a18">甘特圖使用說明</h2>
+        <p style="font-size:12px;color:#888;margin-top:3px">所有功能一覽</p>
+      </div>
+      <button class="panel-close" onclick="document.getElementById('gantt-help-overlay').remove()"><i class="ti ti-x"></i></button>
+    </div>
+    ${items.map(item=>`
+    <div class="gantt-help-item">
+      <div class="gantt-help-icon" style="background:${item.bg};color:${item.ic}">
+        <i class="ti ${item.icon}"></i>
+      </div>
+      <div>
+        <div class="gantt-help-title">${item.title}</div>
+        <div class="gantt-help-desc">${item.desc.replace(/
+/g,'<br>')}</div>
+      </div>
+    </div>`).join('')}
+  </div>`;
+
+  document.body.appendChild(overlay);
+}
+
+// ── Gantt Group Picker ──
+function openGanttGroupPicker(taskId, e){
+  e.stopPropagation();
+  document.querySelectorAll('.gantt-group-popup').forEach(p=>p.remove());
+  const t=tasks.find(x=>String(x.id)===taskId);if(!t)return;
+  const curGroup=ganttGroups[taskId]||'';
+
+  // Collect existing group names
+  const existingGroups=[...new Set(Object.values(ganttGroups).filter(Boolean))].sort();
+
+  const popup=document.createElement('div');
+  popup.className='gantt-group-popup';
+  popup.style.cssText='position:fixed;z-index:1000;background:#fff;border:0.5px solid #ddd;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:6px;min-width:180px';
+
+  // No group option
+  const noneRow=document.createElement('div');
+  noneRow.className='tag-picker-row';
+  noneRow.innerHTML=`<i class="ti ti-x" style="font-size:11px;color:#aaa;width:16px"></i><span style="flex:1;font-size:12px;color:#888">移出群組</span>${!curGroup?'<i class="ti ti-check" style="font-size:10px;color:#378ADD"></i>':''}`;
+  noneRow.onclick=ev=>{ev.stopPropagation();popup.remove();delete ganttGroups[taskId];localStorage.setItem('pm_gantt_groups',JSON.stringify(ganttGroups));renderGantt();showToast('已移出群組');};
+  popup.appendChild(noneRow);
+
+  // Existing groups
+  existingGroups.forEach(g=>{
+    const row=document.createElement('div');
+    row.className='tag-picker-row';
+    row.innerHTML=`<i class="ti ti-layout-list" style="font-size:11px;color:#378ADD;width:16px"></i><span style="flex:1;font-size:12px">${g}</span>${curGroup===g?'<i class="ti ti-check" style="font-size:10px;color:#378ADD"></i>':''}`;
+    row.onclick=ev=>{ev.stopPropagation();popup.remove();ganttGroups[taskId]=g;localStorage.setItem('pm_gantt_groups',JSON.stringify(ganttGroups));renderGantt();showToast('已加入群組：'+g);};
+    popup.appendChild(row);
+  });
+
+  // New group
+  const newRow=document.createElement('div');
+  newRow.className='tag-picker-row';
+  newRow.style.cssText='border-top:0.5px solid #f0f0ed;margin-top:4px;padding-top:8px';
+  newRow.innerHTML=`<i class="ti ti-plus" style="font-size:11px;color:#4F7BE9;width:16px"></i><span style="font-size:12px;color:#4F7BE9">建立新群組...</span>`;
+  newRow.onclick=ev=>{
+    ev.stopPropagation();popup.remove();
+    const name=prompt('新群組名稱：','');
+    if(!name||!name.trim())return;
+    ganttGroups[taskId]=name.trim();
+    localStorage.setItem('pm_gantt_groups',JSON.stringify(ganttGroups));
+    renderGantt();showToast('✓ 已建立群組：'+name.trim());
+  };
+  popup.appendChild(newRow);
+
+  document.body.appendChild(popup);
+  const btn=e.currentTarget||e.target;
+  const rect=btn.getBoundingClientRect();
+  let left=rect.right+4, top=rect.top;
+  if(left+190>window.innerWidth-8) left=rect.left-194;
+  if(top+200>window.innerHeight-8) top=Math.max(8,window.innerHeight-208);
+  popup.style.left=left+'px'; popup.style.top=top+'px';
+  const close=()=>{popup.remove();document.removeEventListener('click',close);};
+  setTimeout(()=>document.addEventListener('click',close),0);
 }
 // ─────────────────────────────────────────────────────────
 
@@ -2272,16 +2406,19 @@ function renderGantt(){
       ondragover="ganttDragOver(event,'${t.id}')"
       ondragleave="ganttDragLeave(event)"
       ondrop="ganttDrop(event,'${t.id}')">
-      <div style="width:200px;min-width:200px;padding:5px 12px;border-right:0.5px solid #e5e5e0;flex-shrink:0;display:flex;align-items:center;gap:5px;cursor:pointer" onclick="openGanttEdit('${t.id}')">
-        <i class="ti ti-grip-vertical" style="font-size:11px;color:#ccc;cursor:grab;flex-shrink:0" onmousedown="e=>e.stopPropagation()"></i>
+      <div style="width:200px;min-width:200px;padding:5px 8px;border-right:0.5px solid #e5e5e0;flex-shrink:0;display:flex;align-items:center;gap:4px;position:relative" class="gantt-row-label-wrap">
+        <i class="ti ti-grip-vertical" style="font-size:11px;color:#ccc;cursor:grab;flex-shrink:0"></i>
         <div class="proj-dot" style="background:${color}"></div>
-        <div style="min-width:0;flex:1">
+        <div style="min-width:0;flex:1;cursor:pointer" onclick="openGanttEdit('${t.id}')">
           <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;display:flex;align-items:center;gap:4px">
             ${t.text}${remindBadges}
           </div>
           <div style="font-size:10px;color:#888">${proj?proj.name+' · ':''}${t.ganttStart}~${t.ganttEnd}${progPct?' · '+progPct+'%':''}</div>
         </div>
-        <i class="ti ti-pencil" style="font-size:10px;color:#ccc;flex-shrink:0"></i>
+        <div class="gantt-row-actions" style="display:none;gap:2px;flex-shrink:0">
+          <button class="task-action-btn" title="設定群組" onclick="openGanttGroupPicker('${t.id}',event)" style="font-size:11px"><i class="ti ti-layout-list"></i></button>
+          <button class="task-action-btn" title="編輯" onclick="openGanttEdit('${t.id}')" style="font-size:11px"><i class="ti ti-pencil"></i></button>
+        </div>
       </div>
       <div class="gantt-timeline-row" style="position:relative">
         ${cellsHtml}
