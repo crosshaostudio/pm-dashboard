@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>專案管理儀表板</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -227,6 +228,14 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
 .gantt-help-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
 .gantt-help-title{font-size:13px;font-weight:500;color:#1a1a18;margin-bottom:2px}
 .gantt-help-desc{font-size:12px;color:#666;line-height:1.5}
+
+.import-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:400;display:flex;align-items:center;justify-content:center}
+.import-modal-box{background:#fff;border-radius:14px;padding:22px;width:480px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+.import-drop-zone{border:2px dashed #ddd;border-radius:10px;padding:28px;text-align:center;cursor:pointer;transition:all .15s;background:#fafaf8}
+.import-drop-zone:hover,.import-drop-zone.drag-over{border-color:#378ADD;background:#E6F1FB}
+.import-task-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid #f0f0ed;font-size:12px}
+.import-task-row:last-child{border-bottom:none}
+.import-check{width:14px;height:14px;cursor:pointer;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -278,6 +287,10 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
         <select id="gantt-owner-filter" onchange="renderGantt()" style="font-size:12px;padding:5px 8px;border-radius:8px;border:0.5px solid #ddd;background:#fff">
           <option value="">全部</option>
         </select>
+        <button class="g-btn" onclick="openExcelImport()" title="匯入排程表" style="gap:5px">
+          <i class="ti ti-file-import" style="font-size:14px"></i>
+          <span style="font-size:12px">匯入 Excel</span>
+        </button>
         <button class="g-btn" onclick="openGanttHelp()" title="使用說明" style="margin-left:auto;gap:5px">
           <i class="ti ti-help-circle" style="font-size:14px"></i>
           <span style="font-size:12px">甘特圖使用說明</span>
@@ -1994,6 +2007,212 @@ function showNoteTooltip(e,key){
 }
 function hideNoteTooltip(){
   document.getElementById('gantt-note-tip')?.remove();
+}
+// ─────────────────────────────────────────────────────────
+
+// ── Excel Import ──────────────────────────────────────────
+function openExcelImport(){
+  const existing=document.getElementById('import-overlay');
+  if(existing){existing.remove();return;}
+  const overlay=document.createElement('div');
+  overlay.className='import-modal-overlay';
+  overlay.id='import-overlay';
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+
+  overlay.innerHTML=`
+  <div class="import-modal-box">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h2 style="font-size:15px;font-weight:600"><i class="ti ti-file-import" style="font-size:15px;margin-right:6px;vertical-align:-2px"></i>匯入排程表</h2>
+      <button class="panel-close" onclick="document.getElementById('import-overlay').remove()"><i class="ti ti-x"></i></button>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:12px;color:#888;display:block;margin-bottom:6px">選擇匯入到哪個專案</label>
+      <select id="import-proj-sel" style="width:100%;padding:7px 10px;border:0.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;background:#fff">
+        ${projects.filter(p=>p.status!=='closed').map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="import-drop-zone" id="import-drop-zone" onclick="document.getElementById('import-file-input').click()">
+      <i class="ti ti-table-import" style="font-size:28px;color:#aaa;display:block;margin-bottom:8px"></i>
+      <div style="font-size:13px;font-weight:500;color:#555">點擊或拖曳上傳 Excel 排程表</div>
+      <div style="font-size:11px;color:#aaa;margin-top:4px">支援 .xlsx 格式的月曆排程表</div>
+    </div>
+    <input type="file" id="import-file-input" accept=".xlsx" style="display:none" onchange="handleExcelUpload(this)">
+    <div id="import-preview" style="margin-top:14px"></div>
+  </div>`;
+
+  document.body.appendChild(overlay);
+
+  // Drag and drop
+  const zone=overlay.querySelector('.import-drop-zone');
+  zone.ondragover=e=>{e.preventDefault();zone.classList.add('drag-over');};
+  zone.ondragleave=()=>zone.classList.remove('drag-over');
+  zone.ondrop=e=>{
+    e.preventDefault();zone.classList.remove('drag-over');
+    const f=e.dataTransfer.files[0];
+    if(f) processExcelFile(f);
+  };
+}
+
+function handleExcelUpload(input){
+  const f=input.files[0];
+  if(f) processExcelFile(f);
+}
+
+function processExcelFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      // Use SheetJS to parse
+      const data=new Uint8Array(e.target.result);
+      const workbook=XLSX.read(data,{type:'array',cellDates:true});
+
+      // Find schedule sheet
+      const sheetName=workbook.SheetNames.find(n=>n.includes('排程')||n.includes('Schedule'))||workbook.SheetNames[0];
+      const ws=workbook.Sheets[sheetName];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
+
+      const tasks=parseScheduleRows(rows);
+      showImportPreview(tasks);
+    }catch(err){
+      document.getElementById('import-preview').innerHTML=
+        `<div style="color:#E24B4A;font-size:12px;padding:10px;background:#FEF2F2;border-radius:8px">解析失敗：${err.message}</div>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseScheduleRows(rows){
+  const typeMap={1:'提供切角',3:'客戶確認切角',5:'提供文章',7:'客戶確認文章',9:'其他排程',11:'文章上線',13:'備註'};
+  const dayCols=[0,2,4,6,8,10,12];
+
+  let currentMonth=null, currentYear=new Date().getFullYear(), currentDates={};
+  const tasks=[];
+
+  function isDayInt(v){ return typeof v==='number'&&!Number.isNaN(v)&&v>=1&&v<=31&&Number.isInteger(v); }
+
+  rows.forEach(row=>{
+    if(!row) return;
+    const r=row.concat(Array(20).fill(null));
+
+    // Year
+    if(typeof r[0]==='string'&&r[0].includes('2026')) currentYear=2026;
+
+    // Month
+    if(typeof r[0]==='string'&&r[0].endsWith('月份')){
+      const m=parseInt(r[0]);
+      if(!isNaN(m)){currentMonth=m;currentDates={};}
+      return;
+    }
+    if(currentMonth===null) return;
+
+    // SheetJS returns booleans as boolean, numbers as number
+    // Date row: numbers in day columns
+    const hasDates=dayCols.some(c=>isDayInt(Number(r[c]))||(/^\d+$/.test(String(r[c]))&&Number(r[c])>=1&&Number(r[c])<=31));
+    if(hasDates){
+      currentDates={};
+      dayCols.forEach(c=>{
+        const v=Number(r[c]);
+        if(!isNaN(v)&&v>=1&&v<=31&&Number.isInteger(v)&&r[c]!==true&&r[c]!==false){
+          currentDates[c]=v;
+        }
+      });
+      return;
+    }
+
+    // Task row: TRUE in day col, text in adjacent col
+    dayCols.forEach(dc=>{
+      const cell=r[dc];
+      if(cell===true||cell==='TRUE'||cell==='true'){
+        for(const offset of [1,-1]){
+          const tc=dc+offset;
+          if(tc>=0&&tc<r.length&&typeof r[tc]==='string'&&r[tc].trim()){
+            const day=currentDates[dc];
+            if(day){
+              try{
+                const dt=new Date(currentYear,currentMonth-1,day);
+                const ds=dt.toISOString().slice(0,10);
+                const taskType=typeMap[tc]||'任務';
+                const text=r[tc].replace(/\n/g,' ').trim();
+                tasks.push({date:ds,task:`[${taskType}] ${text}`,selected:true});
+              }catch(e){}
+            }
+            break;
+          }
+        }
+      }
+    });
+  });
+
+  return tasks;
+}
+
+function showImportPreview(tasks){
+  const preview=document.getElementById('import-preview');
+  if(!tasks.length){
+    preview.innerHTML='<div style="color:#888;font-size:12px;padding:12px;text-align:center">未找到任何任務，請確認是月曆格式的排程表</div>';
+    return;
+  }
+  preview.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:500">找到 ${tasks.length} 筆任務，選擇要匯入的項目：</div>
+      <div style="display:flex;gap:6px">
+        <button class="g-btn" style="font-size:11px;padding:3px 8px" onclick="importSelectAll(true)">全選</button>
+        <button class="g-btn" style="font-size:11px;padding:3px 8px" onclick="importSelectAll(false)">取消全選</button>
+      </div>
+    </div>
+    <div style="max-height:260px;overflow-y:auto;border:0.5px solid #e5e5e0;border-radius:8px;padding:4px 8px">
+      ${tasks.map((t,i)=>`
+        <div class="import-task-row">
+          <input type="checkbox" class="import-check" id="itask-${i}" ${t.selected?'checked':''} onchange="importTasks[${i}].selected=this.checked">
+          <span style="color:#aaa;flex-shrink:0;font-family:monospace">${t.date}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.task}</span>
+        </div>`).join('')}
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="g-btn" onclick="document.getElementById('import-overlay').remove()">取消</button>
+      <button class="g-btn primary" onclick="confirmImport()">
+        <i class="ti ti-download"></i> 匯入至甘特圖與每日待辦
+      </button>
+    </div>`;
+  window.importTasks=tasks;
+}
+
+function importSelectAll(val){
+  window.importTasks.forEach((t,i)=>{t.selected=val;const cb=document.getElementById('itask-'+i);if(cb)cb.checked=val;});
+}
+
+async function confirmImport(){
+  const sel=(window.importTasks||[]).filter(t=>t.selected);
+  if(!sel.length){showToast('請至少選擇一筆任務');return;}
+  const projId=document.getElementById('import-proj-sel').value;
+  if(!projId){showToast('請選擇專案');return;}
+
+  document.getElementById('import-overlay').remove();
+
+  let added=0,ganttAdded=0;
+  const dates=sel.map(t=>t.date).sort();
+  const ganttStart=dates[0], ganttEnd=dates[dates.length-1];
+
+  // Create gantt task spanning the whole range
+  const proj=projects.find(p=>String(p.id)===projId);
+  const ganttName=`[匯入] ${proj?proj.name:'排程'} ${ganttStart}~${ganttEnd}`;
+  const gr=await api('addTask',{text:ganttName,date:ganttStart,projId,done:false,ganttStart,ganttEnd,prog:0,tagColor:'',repeat:'none',repeatRule:''});
+  if(gr&&gr.id){
+    tasks.push({id:String(gr.id),text:ganttName,date:ganttStart,projId:String(projId),done:false,ganttStart,ganttEnd,prog:0,tagColor:'none',repeat:'none',repeatRule:''});
+    ganttAdded++;
+  }
+
+  // Create individual daily todos
+  for(const t of sel){
+    const r=await api('addTask',{text:t.task,date:t.date,projId,done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'',repeat:'none',repeatRule:''});
+    if(r&&r.id){
+      tasks.push({id:String(r.id),text:t.task,date:t.date,projId:String(projId),done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'none',repeat:'none',repeatRule:''});
+      added++;
+    }
+  }
+
+  renderGantt();renderDaily();renderProjects();
+  showToast(`✓ 匯入完成：${added} 筆每日待辦 + ${ganttAdded} 筆甘特任務`);
 }
 // ─────────────────────────────────────────────────────────
 
