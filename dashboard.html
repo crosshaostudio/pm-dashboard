@@ -2069,7 +2069,7 @@ function processExcelFile(file){
       // Find schedule sheet
       const sheetName=workbook.SheetNames.find(n=>n.includes('排程')||n.includes('Schedule'))||workbook.SheetNames[0];
       const ws=workbook.Sheets[sheetName];
-      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
 
       const tasks=parseScheduleRows(rows);
       showImportPreview(tasks);
@@ -2091,9 +2091,14 @@ function parseScheduleRows(rows){
 
   function isDayInt(v){
     if(v===true||v===false) return false;
-    const n=Number(v);
-    return !isNaN(n)&&n>=1&&n<=31&&Number.isInteger(n);
+    if(typeof v==='number') return v>=1&&v<=31&&Math.floor(v)===v;
+    if(typeof v==='string'&&v.trim()!==''){
+      const n=Number(v.trim());
+      return !isNaN(n)&&n>=1&&n<=31&&Number.isInteger(n);
+    }
+    return false;
   }
+  function toNum(v){ return typeof v==='string'?Number(v.trim()):Number(v); }
 
   rows.forEach(row=>{
     if(!row) return;
@@ -2116,7 +2121,7 @@ function parseScheduleRows(rows){
     // Date row: actual integers (not bool) in day columns
     if(dayCols.some(c=>isDayInt(r[c]))){
       currentDates={};
-      dayCols.forEach(c=>{ if(isDayInt(r[c])) currentDates[c]=Number(r[c]); });
+      dayCols.forEach(c=>{ if(isDayInt(r[c])) currentDates[c]=Math.floor(toNum(r[c])); });
       return;
     }
 
@@ -2124,7 +2129,7 @@ function parseScheduleRows(rows){
     let foundFlag=false;
     dayCols.forEach(dc=>{
       const cell=r[dc];
-      if(cell===true||cell==='TRUE'||cell==='true'){
+      if(cell===true||cell==='TRUE'||cell==='true'||cell===1){
         foundFlag=true;
         for(const offset of [1,-1]){
           const tc=dc+offset;
