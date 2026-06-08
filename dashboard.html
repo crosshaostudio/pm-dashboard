@@ -239,6 +239,36 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
 
 .gantt-toggle-btn{background:none;border:0.5px solid #ddd;border-radius:6px;padding:2px 6px;font-size:10px;color:#aaa;cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0}
 .gantt-toggle-btn.on{background:#E6F1FB;border-color:#378ADD;color:#0C447C;font-weight:500}
+
+.ho-section{background:#fff;border-radius:12px;border:0.5px solid #e5e5e0;margin-bottom:14px;overflow:hidden}
+.ho-section-header{display:flex;align-items:center;gap:8px;padding:12px 16px;cursor:pointer;user-select:none;border-bottom:0.5px solid #e5e5e0}
+.ho-section-header:hover{background:#fafaf8}
+.ho-section-body{padding:14px 16px}
+.ho-brand-name{font-size:14px;font-weight:600;color:#1a1a18;flex:1}
+.ho-badge{font-size:10px;padding:2px 8px;border-radius:8px;font-weight:500}
+.ho-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:12px}
+.ho-card{background:#f5f5f3;border-radius:8px;padding:10px 12px}
+.ho-card-title{font-size:10px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.ho-person{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:0.5px solid #e5e5e0}
+.ho-person:last-child{border-bottom:none}
+.ho-person-name{font-size:12px;font-weight:500;color:#1a1a18;min-width:60px}
+.ho-person-title{font-size:10px;color:#888}
+.ho-person-mail{font-size:11px;color:#378ADD;cursor:pointer;text-decoration:none}
+.ho-person-mail:hover{text-decoration:underline}
+.ho-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;padding-top:10px;border-top:0.5px solid #e5e5e0}
+.ho-meta-item{font-size:11px;color:#555;background:#f0f0ed;padding:3px 8px;border-radius:6px}
+.ho-meta-item span{color:#888;margin-right:4px}
+.ho-progress{font-size:12px;color:#555;padding:8px;background:#FFFBCC;border-radius:6px;border-left:3px solid #E6D94F;margin-top:8px;white-space:pre-wrap}
+.ho-project-row{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:0.5px solid #f0f0ed;font-size:12px}
+.ho-project-row:last-child{border-bottom:none}
+.ho-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.ho-tab-btn{padding:6px 14px;border-radius:8px;border:0.5px solid #ddd;background:#fff;font-size:12px;cursor:pointer;transition:all .15s;font-family:inherit}
+.ho-tab-btn.active{background:#1a1a18;color:#fff;border-color:#1a1a18}
+.ho-cloud-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid #f0f0ed}
+.ho-cloud-row:last-child{border-bottom:none}
+.ho-cloud-brand{font-size:10px;padding:2px 6px;border-radius:6px;background:#E6F1FB;color:#0C447C;flex-shrink:0;font-weight:500}
+.ho-cloud-desc{font-size:12px;color:#1a1a18;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ho-cloud-cat{font-size:10px;color:#888;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -264,6 +294,7 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
       <div class="tab active" onclick="switchTab('daily',this)"><i class="ti ti-calendar"></i> 每日待辦</div>
       <div class="tab" onclick="switchTab('gantt',this)"><i class="ti ti-chart-gantt"></i> 甘特圖</div>
       <div class="tab" onclick="switchTab('invoice',this)"><i class="ti ti-receipt"></i> 請款日</div>
+      <div class="tab" onclick="switchTab('handover',this)"><i class="ti ti-address-book"></i> 專案交接</div>
       <div class="topbar-right" id="topbar-right">
         <button class="icon-btn" onclick="syncAll()" title="同步"><i class="ti ti-cloud-upload" style="font-size:14px"></i><span style="font-size:11px">同步</span></button>
         <button class="icon-btn" onclick="openPanel('share')" title="共享"><i class="ti ti-share" style="font-size:14px"></i></button>
@@ -315,7 +346,10 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
       </div>
       <div class="gantt-wrap"><div class="gantt-scroll"><div id="gantt-container"></div></div></div>
     </div>
-    <div class="view" id="view-invoice"><div id="invoice-root" style="padding:2px"></div></div>
+    <div class="view" id="view-handover" style="display:none;padding:0">
+  <div id="handover-container" style="height:100%;overflow-y:auto;padding:14px"></div>
+</div>
+<div class="view" id="view-invoice"><div id="invoice-root" style="padding:2px"></div></div>
   </div>
 </div>
 
@@ -579,6 +613,7 @@ async function syncAll(){
   // Restore scroll position
   if(dailyView) dailyView.scrollTop=scrollTop;
 
+  await loadHandoverData();
   showToast('✓ 已同步 '+tasks.length+' 筆任務');
 }
 
@@ -1436,6 +1471,482 @@ async function renderLog(){
     </div>`;
   }).join('');
 }
+
+// ── Handover Page ─────────────────────────────────────────
+let contacts = [];
+let cloudLinks = [];
+let handoverTab = 'contacts'; // 'contacts' | 'cloud' | 'email'
+let contactsCollapsed = JSON.parse(localStorage.getItem('pm_contacts_collapsed')||'{}');
+
+async function loadHandoverData(){
+  const [c, cl] = await Promise.all([api('getContacts'), api('getCloudLinks')]);
+  if(c) contacts = c;
+  if(cl) cloudLinks = cl;
+}
+
+function renderHandover(){
+  const container = document.getElementById('handover-container');
+  if(!container) return;
+
+  // Toolbar
+  container.innerHTML = `
+    <div class="ho-toolbar">
+      <button class="ho-tab-btn ${handoverTab==='contacts'?'active':''}" onclick="setHandoverTab('contacts')">
+        <i class="ti ti-users" style="font-size:12px;margin-right:4px"></i>案件窗口聯繫表
+      </button>
+      <button class="ho-tab-btn ${handoverTab==='cloud'?'active':''}" onclick="setHandoverTab('cloud')">
+        <i class="ti ti-cloud" style="font-size:12px;margin-right:4px"></i>雲端資料管理
+      </button>
+      <button class="ho-tab-btn ${handoverTab==='email'?'active':''}" onclick="setHandoverTab('email')">
+        <i class="ti ti-mail" style="font-size:12px;margin-right:4px"></i>信件命名規則
+      </button>
+      <div style="flex:1"></div>
+      ${handoverTab==='contacts'?`
+        <button class="g-btn" onclick="openImportContacts()"><i class="ti ti-file-import"></i> 匯入 Excel</button>
+        <button class="g-btn primary" onclick="openContactForm()"><i class="ti ti-plus"></i> 新增品牌</button>
+      `:''}
+      ${handoverTab==='cloud'?`
+        <button class="g-btn primary" onclick="openCloudLinkForm()"><i class="ti ti-plus"></i> 新增連結</button>
+      `:''}
+    </div>
+    <div id="handover-body"></div>`;
+
+  if(handoverTab==='contacts') renderContactsTab();
+  else if(handoverTab==='cloud') renderCloudTab();
+  else renderEmailRulesTab();
+}
+
+function setHandoverTab(tab){
+  handoverTab=tab;
+  renderHandover();
+}
+
+// ── Contacts Tab ──────────────────────────────────────────
+function renderContactsTab(){
+  const body = document.getElementById('handover-body');
+  if(!contacts.length){
+    body.innerHTML = '<div class="empty-state">尚無資料，請匯入 Excel 或手動新增</div>';
+    return;
+  }
+
+  // Group by brand
+  const brands = [...new Set(contacts.map(c=>c.brand).filter(Boolean))];
+  body.innerHTML = brands.map(brand=>{
+    const brandContacts = contacts.filter(c=>String(c.brand)===String(brand));
+    const main = brandContacts[0];
+    const collapsed = contactsCollapsed[brand];
+    const typeColors = {'直客':'#EAF3DE','共想':'#E6F1FB','商品(張簡)':'#FFF7ED','邁肯、商品(張簡)':'#F5F3FF'};
+    const typeBg = typeColors[main.type]||'#f0f0ed';
+
+    // Collect all agency people
+    const agencyPeople = brandContacts
+      .filter(c=>c.agencyPerson&&c.agencyPerson!=='無')
+      .map(c=>({name:c.agencyPerson,title:c.agencyTitle,mail:c.agencyMail}));
+    const agencyPeopleUniq = agencyPeople.filter((p,i)=>agencyPeople.findIndex(x=>x.name===p.name)===i);
+
+    // Collect all client people
+    const clientPeople = brandContacts
+      .filter(c=>c.clientPerson&&c.clientPerson!=='無')
+      .map(c=>({name:c.clientPerson,mail:c.clientMail}));
+    const clientPeopleUniq = clientPeople.filter((p,i)=>clientPeople.findIndex(x=>x.name===p.name)===i);
+
+    // Collect all vendors
+    const vendors = brandContacts
+      .filter(c=>c.vendorName)
+      .map(c=>({name:c.vendorName,person:c.vendorPerson,mail:c.vendorMail,group:c.vendorGroup}));
+    const vendorsUniq = vendors.filter((v,i)=>vendors.findIndex(x=>x.name===v.name)===i);
+
+    // Projects
+    const projects2 = brandContacts.filter(c=>c.project).map(c=>({proj:c.project,progress:c.progress}));
+
+    return `<div class="ho-section">
+      <div class="ho-section-header" onclick="toggleContactBrand('${brand.replace(/'/g,'\'')}')">
+        <span class="ho-brand-name">${brand}</span>
+        <span class="ho-badge" style="background:${typeBg};color:#555">${main.type||''}</span>
+        ${main.agencyGroup?`<span style="font-size:10px;color:#aaa">${main.agencyGroup}</span>`:''}
+        <i class="ti ${collapsed?'ti-chevron-right':'ti-chevron-down'}" style="font-size:11px;color:#bbb"></i>
+        <button class="task-action-btn" onclick="openContactForm('${brand.replace(/'/g,"\'")}',event)" title="編輯"><i class="ti ti-pencil" style="font-size:12px"></i></button>
+      </div>
+      ${collapsed?'':renderContactBody(main, agencyPeopleUniq, clientPeopleUniq, vendorsUniq, projects2)}
+    </div>`;
+  }).join('');
+}
+
+function renderContactBody(main, agencyPeople, clientPeople, vendors, projects2){
+  return `<div class="ho-section-body">
+    <div class="ho-grid">
+      ${agencyPeople.length?`<div class="ho-card">
+        <div class="ho-card-title">廣代窗口 ${main.agencyName||''}</div>
+        ${agencyPeople.map(p=>`<div class="ho-person">
+          <div>
+            <div class="ho-person-name">${p.name}</div>
+            <div class="ho-person-title">${p.title||''}</div>
+          </div>
+          ${p.mail&&p.mail!=='無'?`<a class="ho-person-mail" href="mailto:${p.mail}">${p.mail}</a>`:''}
+        </div>`).join('')}
+      </div>`:''}
+      ${clientPeople.length?`<div class="ho-card">
+        <div class="ho-card-title">客戶窗口</div>
+        ${clientPeople.map(p=>`<div class="ho-person">
+          <div class="ho-person-name">${p.name}</div>
+          ${p.mail&&p.mail!=='無'?`<a class="ho-person-mail" href="mailto:${p.mail}">${p.mail}</a>`:''}
+        </div>`).join('')}
+      </div>`:''}
+      ${vendors.length?`<div class="ho-card">
+        <div class="ho-card-title">外發廠商</div>
+        ${vendors.map(v=>`<div class="ho-person">
+          <div>
+            <div class="ho-person-name">${v.name}</div>
+            ${v.person?`<div class="ho-person-title">${v.person}</div>`:''}
+          </div>
+          ${v.mail?`<a class="ho-person-mail" href="mailto:${v.mail}">${v.mail}</a>`:''}
+        </div>`).join('')}
+      </div>`:''}
+    </div>
+    <div class="ho-meta">
+      ${main.invoiceDay?`<div class="ho-meta-item"><span>請款日</span>${main.invoiceDay}</div>`:''}
+      ${main.reportDay?`<div class="ho-meta-item"><span>週報</span>${main.reportDay}</div>`:''}
+      ${main.closeDay?`<div class="ho-meta-item"><span>結案</span>${main.closeDay}</div>`:''}
+      ${main.cloudUrl?`<div class="ho-meta-item"><span>雲端</span><a href="${main.cloudUrl}" target="_blank" style="color:#378ADD">開啟</a></div>`:''}
+      ${main.cloudOwner?`<div class="ho-meta-item"><span>雲端負責人</span>${main.cloudOwner}</div>`:''}
+    </div>
+    ${projects2.length?`<div style="margin-top:10px">
+      <div style="font-size:10px;color:#888;font-weight:500;margin-bottom:6px">專案進度</div>
+      ${projects2.map(p=>`<div class="ho-project-row">
+        <span style="font-weight:500;min-width:100px;flex-shrink:0">${p.proj}</span>
+        <span style="color:#555">${p.progress||''}</span>
+      </div>`).join('')}
+    </div>`:''}
+    ${main.todo?`<div class="ho-progress"><i class="ti ti-alert-circle" style="font-size:11px"></i> ${main.todo}</div>`:''}
+  </div>`;
+}
+
+function toggleContactBrand(brand){
+  contactsCollapsed[brand]=!contactsCollapsed[brand];
+  localStorage.setItem('pm_contacts_collapsed',JSON.stringify(contactsCollapsed));
+  renderHandover();
+}
+
+// ── Cloud Links Tab ───────────────────────────────────────
+function renderCloudTab(){
+  const body=document.getElementById('handover-body');
+  if(!cloudLinks.length){
+    body.innerHTML='<div class="empty-state">尚無連結，點右上角新增</div>';
+    return;
+  }
+  const cats=[...new Set(cloudLinks.map(c=>c.category||'其他'))];
+  body.innerHTML=cats.map(cat=>{
+    const links=cloudLinks.filter(c=>(c.category||'其他')===cat);
+    return `<div class="ho-section">
+      <div class="ho-section-header" style="cursor:default">
+        <span class="ho-brand-name">${cat}</span>
+        <span style="font-size:11px;color:#aaa">${links.length} 個連結</span>
+      </div>
+      <div class="ho-section-body">
+        ${links.map(l=>`<div class="ho-cloud-row">
+          <span class="ho-cloud-brand">${l.brand||'通用'}</span>
+          <div style="flex:1;min-width:0">
+            <div class="ho-cloud-desc">${l.description||l.url}</div>
+            <a href="${l.url}" target="_blank" style="font-size:10px;color:#378ADD">${l.url.slice(0,60)}${l.url.length>60?'...':''}</a>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="task-action-btn" onclick="openCloudLinkForm('${l.id}')"><i class="ti ti-pencil" style="font-size:11px"></i></button>
+            <button class="task-action-btn" onclick="deleteCloudLinkById('${l.id}')" style="color:#E24B4A"><i class="ti ti-trash" style="font-size:11px"></i></button>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Email Rules Tab ───────────────────────────────────────
+function renderEmailRulesTab(){
+  const body=document.getElementById('handover-body');
+  body.innerHTML=`
+    <div class="ho-section">
+      <div class="ho-section-header" style="cursor:default">
+        <span class="ho-brand-name">信件命名規則</span>
+        <span style="font-size:11px;color:#aaa">上傳信件截圖，AI 自動整理命名規則</span>
+      </div>
+      <div class="ho-section-body">
+        <div style="background:#f5f5f3;border-radius:8px;padding:14px;text-align:center;border:2px dashed #ddd;cursor:pointer" onclick="document.getElementById('email-screenshot-input').click()">
+          <i class="ti ti-mail-opened" style="font-size:28px;color:#aaa;display:block;margin-bottom:8px"></i>
+          <div style="font-size:13px;color:#555">點擊或拖曳上傳信件截圖</div>
+          <div style="font-size:11px;color:#aaa;margin-top:4px">支援 JPG / PNG</div>
+        </div>
+        <input type="file" id="email-screenshot-input" accept="image/*" style="display:none" onchange="analyzeEmailScreenshot(this)">
+        <div id="email-rules-result" style="margin-top:12px"></div>
+        <div id="email-rules-list" style="margin-top:14px">
+          ${localStorage.getItem('pm_email_rules')
+            ? JSON.parse(localStorage.getItem('pm_email_rules')||'[]').map((r,i)=>`
+              <div style="padding:10px;background:#fff;border:0.5px solid #e5e5e0;border-radius:8px;margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                  <span style="font-size:11px;font-weight:500;padding:2px 8px;background:#E6F1FB;color:#0C447C;border-radius:6px">${r.brand}</span>
+                  <span style="font-size:11px;color:#888;flex:1">${r.pattern}</span>
+                  <button class="task-action-btn" onclick="deleteEmailRule(${i})" style="color:#E24B4A"><i class="ti ti-trash" style="font-size:11px"></i></button>
+                </div>
+                <div style="font-size:12px;color:#555;white-space:pre-wrap">${r.rule}</div>
+              </div>`).join('')
+            : '<div style="font-size:12px;color:#aaa;text-align:center;padding:20px">尚無規則，請上傳截圖分析</div>'}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function analyzeEmailScreenshot(input){
+  const file=input.files[0];if(!file)return;
+  const result=document.getElementById('email-rules-result');
+  result.innerHTML='<div style="text-align:center;padding:14px;color:#888"><i class="ti ti-loader ti-spin"></i> AI 分析中...</div>';
+
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    const base64=e.target.result.split(',')[1];
+    try{
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:1000,
+          messages:[{role:'user',content:[
+            {type:'image',source:{type:'base64',media_type:file.type,data:base64}},
+            {type:'text',text:'這是一封工作信件的截圖。請分析並整理出：1. 品牌/客戶名稱 2. 信件主旨命名規則（格式）3. 內容重點規則。請用JSON格式回覆，格式：{"brand":"品牌名","pattern":"主旨格式範例","rule":"詳細規則說明"}'}
+          ]}]}
+        )
+      });
+      const data=await res.json();
+      const text=data.content?.[0]?.text||'';
+      const clean=text.replace(/```json|```/g,'').trim();
+      const parsed=JSON.parse(clean);
+
+      // Save to localStorage
+      const existing=JSON.parse(localStorage.getItem('pm_email_rules')||'[]');
+      existing.unshift(parsed);
+      localStorage.setItem('pm_email_rules',JSON.stringify(existing));
+
+      result.innerHTML=`<div style="padding:10px;background:#EAF3DE;border-radius:8px;font-size:12px">
+        <div style="font-weight:500;margin-bottom:4px">✓ 分析完成：${parsed.brand}</div>
+        <div style="color:#555">${parsed.rule}</div>
+      </div>`;
+      renderHandover();
+    }catch(err){
+      result.innerHTML=`<div style="padding:10px;background:#FEF2F2;border-radius:8px;font-size:12px;color:#E24B4A">分析失敗：${err.message}</div>`;
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+function deleteEmailRule(idx){
+  const rules=JSON.parse(localStorage.getItem('pm_email_rules')||'[]');
+  rules.splice(idx,1);
+  localStorage.setItem('pm_email_rules',JSON.stringify(rules));
+  renderHandover();
+}
+
+// ── Contact Form ──────────────────────────────────────────
+function openContactForm(brand, e){
+  if(e) e.stopPropagation();
+  const existing=brand?contacts.filter(c=>c.brand===brand):[];
+  const main=existing[0]||{};
+  const overlay=document.createElement('div');
+  overlay.className='repeat-modal-overlay';
+  overlay.id='contact-form-overlay';
+  overlay.onclick=ev=>{if(ev.target===overlay)overlay.remove();};
+  overlay.innerHTML=`
+  <div class="repeat-modal" style="width:580px;max-height:85vh;overflow-y:auto">
+    <h3><i class="ti ti-users" style="font-size:14px;margin-right:6px"></i>${brand?'編輯：'+brand:'新增品牌窗口'}</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>品牌名稱</label><input type="text" id="cf-brand" value="${main.brand||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>直客/廣代</label><input type="text" id="cf-type" value="${main.type||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>廣代公司</label><input type="text" id="cf-agencyName" value="${main.agencyName||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>廣代群組</label><input type="text" id="cf-agencyGroup" value="${main.agencyGroup||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>廣代窗口姓名</label><input type="text" id="cf-agencyPerson" value="${main.agencyPerson||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>廣代窗口職稱</label><input type="text" id="cf-agencyTitle" value="${main.agencyTitle||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group" style="grid-column:1/-1"><label>廣代 Mail</label><input type="text" id="cf-agencyMail" value="${main.agencyMail||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>客戶窗口姓名</label><input type="text" id="cf-clientPerson" value="${main.clientPerson||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>客戶 Mail</label><input type="text" id="cf-clientMail" value="${main.clientMail||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>請款日</label><input type="text" id="cf-invoiceDay" value="${main.invoiceDay||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>週報表日</label><input type="text" id="cf-reportDay" value="${main.reportDay||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group" style="grid-column:1/-1"><label>雲端連結</label><input type="text" id="cf-cloudUrl" value="${main.cloudUrl||''}" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group" style="grid-column:1/-1"><label>最新進度備註</label><textarea id="cf-todo" rows="3" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit;resize:vertical">${main.todo||''}</textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="g-btn" onclick="document.getElementById('contact-form-overlay').remove()">取消</button>
+      <button class="g-btn primary" onclick="saveContactForm('${(brand||'').replace(/'/g,"\'")}')">儲存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveContactForm(existingBrand){
+  const get=id=>document.getElementById(id)?.value.trim()||'';
+  const data={
+    brand:get('cf-brand'), type:get('cf-type'),
+    agencyName:get('cf-agencyName'), agencyGroup:get('cf-agencyGroup'),
+    agencyPerson:get('cf-agencyPerson'), agencyTitle:get('cf-agencyTitle'), agencyMail:get('cf-agencyMail'),
+    clientPerson:get('cf-clientPerson'), clientMail:get('cf-clientMail'),
+    invoiceDay:get('cf-invoiceDay'), reportDay:get('cf-reportDay'),
+    cloudUrl:get('cf-cloudUrl'), todo:get('cf-todo'),
+    user:currentUser
+  };
+  document.getElementById('contact-form-overlay')?.remove();
+
+  if(existingBrand){
+    // Update existing
+    const main=contacts.find(c=>c.brand===existingBrand);
+    if(main){
+      Object.assign(main,data);
+      await api('updateContact',{id:String(main.id),...data});
+    }
+  } else {
+    const res=await api('addContact',data);
+    if(res&&res.id) contacts.push({id:String(res.id),...data});
+  }
+  renderHandover();
+  showToast('✓ 已儲存');
+}
+
+// ── Import Contacts from Excel ────────────────────────────
+function openImportContacts(){
+  const overlay=document.createElement('div');
+  overlay.className='repeat-modal-overlay';
+  overlay.id='import-contacts-overlay';
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  overlay.innerHTML=`
+  <div class="repeat-modal" style="width:400px">
+    <h3><i class="ti ti-file-import" style="font-size:14px;margin-right:6px"></i>匯入案件窗口 Excel</h3>
+    <div class="import-drop-zone" onclick="document.getElementById('contacts-file-input').click()" style="margin-bottom:12px">
+      <i class="ti ti-table-import" style="font-size:28px;color:#aaa;display:block;margin-bottom:8px"></i>
+      <div style="font-size:13px;color:#555">點擊上傳交接 Excel</div>
+      <div style="font-size:11px;color:#aaa;margin-top:4px">支援「案件窗口交接.xlsx」格式</div>
+    </div>
+    <input type="file" id="contacts-file-input" accept=".xlsx" style="display:none" onchange="processContactsExcel(this)">
+    <div id="contacts-import-status"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function processContactsExcel(input){
+  const file=input.files[0];if(!file)return;
+  const status=document.getElementById('contacts-import-status');
+  status.innerHTML='<div style="text-align:center;color:#888;padding:10px"><i class="ti ti-loader ti-spin"></i> 解析中...</div>';
+
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array',raw:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
+
+      // Parse based on known column structure
+      // Col: 0=brand,1=type,2=agencyPerson,3=agencyTitle,4=agencyMail,5=agencyGroup
+      // 6=clientPerson,7=clientMail,8=clientGroup,9=vendorName,10=vendorPerson
+      // 11=vendorMail,12=vendorGroup,13=invoiceDay,14=reportDay,15=closeDay
+      // 16=todo,17=cloudUrl,18=cloudOwner,19=folder,20=project,21=progress
+      const parsed=[];
+      let currentBrand='', currentType='', currentGroup='';
+
+      rows.slice(1).forEach(row=>{
+        if(!row||row.every(v=>v===null||v==='')) return;
+        const r=row.map(v=>v===null||v===false?'':String(v).trim());
+
+        if(r[0]) currentBrand=r[0].replace(/[\n\r]/g,' ');
+        if(r[1]) currentType=r[1];
+        if(r[5]) currentGroup=r[5];
+
+        if(currentBrand&&(r[2]||r[6]||r[9])){
+          parsed.push({
+            brand:currentBrand, type:currentType,
+            agencyName:r[1]||currentType, agencyGroup:currentGroup,
+            agencyPerson:r[2]||'', agencyTitle:r[3]||'', agencyMail:r[4]||'',
+            clientPerson:r[6]||'', clientMail:r[7]||'', clientGroup:r[8]||'',
+            vendorName:r[9]||'', vendorPerson:r[10]||'', vendorMail:r[11]||'', vendorGroup:r[12]||'',
+            invoiceDay:r[13]||'', reportDay:r[14]||'', closeDay:r[15]||'',
+            todo:r[16]||'', cloudUrl:r[17]||'', cloudOwner:r[18]||'',
+            folder:r[19]||'', project:r[20]||'', progress:r[21]||''
+          });
+        }
+      });
+
+      status.innerHTML=`<div style="color:#27500A;font-size:12px;padding:8px;background:#EAF3DE;border-radius:8px">找到 ${parsed.length} 筆資料，匯入中...</div>`;
+
+      let added=0;
+      for(const c of parsed){
+        const res=await api('addContact',{...c,user:currentUser});
+        if(res&&res.id){contacts.push({id:String(res.id),...c});added++;}
+      }
+
+      document.getElementById('import-contacts-overlay')?.remove();
+      renderHandover();
+      showToast('✓ 匯入完成：'+added+' 筆聯絡資料');
+    }catch(err){
+      status.innerHTML=`<div style="color:#E24B4A;font-size:12px;padding:8px;background:#FEF2F2;border-radius:8px">解析失敗：${err.message}</div>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── Cloud Link Form ───────────────────────────────────────
+function openCloudLinkForm(id){
+  const link=id?cloudLinks.find(c=>String(c.id)===String(id)):null;
+  const overlay=document.createElement('div');
+  overlay.className='repeat-modal-overlay';
+  overlay.id='cloud-link-form-overlay';
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  overlay.innerHTML=`
+  <div class="repeat-modal" style="width:440px">
+    <h3><i class="ti ti-cloud" style="font-size:14px;margin-right:6px"></i>${link?'編輯連結':'新增雲端連結'}</h3>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="form-group"><label>品牌/專案</label>
+        <input type="text" id="cl-brand" value="${link?link.brand:''}" list="cl-brand-list" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit">
+        <datalist id="cl-brand-list">${[...new Set(contacts.map(c=>c.brand))].map(b=>`<option value="${b}">`).join('')}</datalist>
+      </div>
+      <div class="form-group"><label>連結網址</label>
+        <input type="url" id="cl-url" value="${link?link.url:''}" placeholder="https://..." style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>功能說明</label>
+        <input type="text" id="cl-desc" value="${link?link.description:''}" placeholder="說明這個連結的用途" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit"></div>
+      <div class="form-group"><label>分類</label>
+        <input type="text" id="cl-cat" value="${link?link.category:''}" placeholder="例：報表、雲端硬碟、試算表" list="cl-cat-list" style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit">
+        <datalist id="cl-cat-list">${[...new Set(cloudLinks.map(c=>c.category).filter(Boolean))].map(c=>`<option value="${c}">`).join('')}</datalist>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="g-btn" onclick="document.getElementById('cloud-link-form-overlay').remove()">取消</button>
+      <button class="g-btn primary" onclick="saveCloudLink('${id||''}')">儲存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function saveCloudLink(id){
+  const brand=document.getElementById('cl-brand')?.value.trim()||'';
+  const url=document.getElementById('cl-url')?.value.trim()||'';
+  const description=document.getElementById('cl-desc')?.value.trim()||'';
+  const category=document.getElementById('cl-cat')?.value.trim()||'其他';
+  if(!url){showToast('請輸入連結網址');return;}
+  document.getElementById('cloud-link-form-overlay')?.remove();
+
+  if(id){
+    const link=cloudLinks.find(c=>String(c.id)===String(id));
+    if(link){Object.assign(link,{brand,url,description,category});}
+    await api('updateCloudLink',{id:String(id),brand,url,description,category});
+  } else {
+    const res=await api('addCloudLink',{brand,url,description,category,user:currentUser});
+    if(res&&res.id) cloudLinks.push({id:String(res.id),brand,url,description,category});
+  }
+  renderHandover();
+  showToast('✓ 連結已儲存');
+}
+
+async function deleteCloudLinkById(id){
+  if(!confirm('確定刪除此連結？'))return;
+  cloudLinks=cloudLinks.filter(c=>String(c.id)!==String(id));
+  await api('deleteCloudLink',{id:String(id)});
+  renderHandover();
+  showToast('✓ 已刪除');
+}
+// ─────────────────────────────────────────────────────────
 
 function filterByTag(tagId, el){
   activeTagFilter = tagId;
@@ -3434,7 +3945,8 @@ function switchTab(name,el){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   el.classList.add('active');document.getElementById('view-'+name).classList.add('active');
   if(name==='gantt')renderGantt();
-  if(name==='invoice'){renderInvoice();}
+  if(name==='invoice')renderInvoice();
+  if(name==='handover')renderHandover();
 }
 
 // Auto-fill inputs and connect on load
