@@ -2059,6 +2059,8 @@ function handleExcelUpload(input){
 }
 
 function processExcelFile(file){
+  // Use filename (without extension) as default group name
+  window.importFileName=file.name.replace(/\.xlsx?$/i,'').replace(/^_+/,'').trim().slice(0,30);
   const reader=new FileReader();
   reader.onload=e=>{
     try{
@@ -2199,12 +2201,19 @@ function showImportPreview(tasks){
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.task}</span>
         </div>`).join('')}
     </div>
-    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="g-btn" onclick="document.getElementById('import-overlay').remove()">取消</button>
-      <button class="g-btn primary" onclick="confirmImport()">
-        <i class="ti ti-download"></i> 匯入至甘特圖與每日待辦
-      </button>
-    </div>`;
+    <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:160px">
+        <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">群組名稱</label>
+        <input type="text" id="import-group-name" placeholder="例：T368排程" value="${window.importFileName||'匯入排程'}"
+          style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit">
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:1px">
+        <button class="g-btn" onclick="document.getElementById('import-overlay').remove()">取消</button>
+        <button class="g-btn primary" onclick="confirmImport()">
+          <i class="ti ti-download"></i> 匯入
+        </button>
+      </div>
+    </div>\`;
   window.importTasks=tasks;
 }
 
@@ -2218,32 +2227,43 @@ async function confirmImport(){
   const projId=document.getElementById('import-proj-sel').value;
   if(!projId){showToast('請選擇專案');return;}
 
+  const groupName=document.getElementById('import-group-name')?.value.trim()||'匯入排程';
   document.getElementById('import-overlay').remove();
 
-  let added=0,ganttAdded=0;
-  const dates=sel.map(t=>t.date).sort();
-  const ganttStart=dates[0], ganttEnd=dates[dates.length-1];
+  showToast('匯入中，請稍候...');
 
-  // Create gantt task spanning the whole range
-  const proj=projects.find(p=>String(p.id)===projId);
-  const ganttName=`[匯入] ${proj?proj.name:'排程'} ${ganttStart}~${ganttEnd}`;
-  const gr=await api('addTask',{text:ganttName,date:ganttStart,projId,done:false,ganttStart,ganttEnd,prog:0,tagColor:'',repeat:'none',repeatRule:''});
-  if(gr&&gr.id){
-    tasks.push({id:String(gr.id),text:ganttName,date:ganttStart,projId:String(projId),done:false,ganttStart,ganttEnd,prog:0,tagColor:'none',repeat:'none',repeatRule:''});
-    ganttAdded++;
-  }
+  let added=0;
+  const newTaskIds=[];
 
-  // Create individual daily todos
+  // Each task = one gantt bar (start=end=that day) + daily todo
   for(const t of sel){
-    const r=await api('addTask',{text:t.task,date:t.date,projId,done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'',repeat:'none',repeatRule:''});
+    const r=await api('addTask',{
+      text:t.task, date:t.date, projId,
+      done:false, prog:0,
+      ganttStart:t.date, ganttEnd:t.date,
+      tagColor:'', repeat:'none', repeatRule:''
+    });
     if(r&&r.id){
-      tasks.push({id:String(r.id),text:t.task,date:t.date,projId:String(projId),done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'none',repeat:'none',repeatRule:''});
+      const newTask={
+        id:String(r.id), text:t.task, date:t.date,
+        projId:String(projId), done:false, prog:0,
+        ganttStart:t.date, ganttEnd:t.date,
+        tagColor:'none', repeat:'none', repeatRule:''
+      };
+      tasks.push(newTask);
+      newTaskIds.push(String(r.id));
       added++;
     }
   }
 
+  // Auto-assign all imported tasks to the same group
+  if(groupName&&newTaskIds.length){
+    newTaskIds.forEach(id=>{ ganttGroups[id]=groupName; });
+    localStorage.setItem('pm_gantt_groups',JSON.stringify(ganttGroups));
+  }
+
   renderGantt();renderDaily();renderProjects();
-  showToast(`✓ 匯入完成：${added} 筆每日待辦 + ${ganttAdded} 筆甘特任務`);
+  showToast(`✓ 匯入完成：${added} 筆任務已加入甘特圖、每日待辦，群組「${groupName}」`);
 }
 // ─────────────────────────────────────────────────────────
 
