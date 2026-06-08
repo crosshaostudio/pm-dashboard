@@ -2084,18 +2084,26 @@ function processExcelFile(file){
 function parseScheduleRows(rows){
   const typeMap={1:'提供切角',3:'客戶確認切角',5:'提供文章',7:'客戶確認文章',9:'其他排程',11:'文章上線',13:'備註'};
   const dayCols=[0,2,4,6,8,10,12];
+  const headerValues=new Set(['提供切角','客戶確認切角','提供文章','客戶確認文章','其他排程','文章上線','備註','注意事項','Sun.','Mon.','Tue.','Wed.','Thu.','Fri.','Sat.','備註']);
 
   let currentMonth=null, currentYear=new Date().getFullYear(), currentDates={};
   const tasks=[];
 
-  function isDayInt(v){ return typeof v==='number'&&!Number.isNaN(v)&&v>=1&&v<=31&&Number.isInteger(v); }
+  function isDayInt(v){
+    if(v===true||v===false) return false;
+    const n=Number(v);
+    return !isNaN(n)&&n>=1&&n<=31&&Number.isInteger(n);
+  }
 
   rows.forEach(row=>{
     if(!row) return;
     const r=row.concat(Array(20).fill(null));
 
     // Year
-    if(typeof r[0]==='string'&&r[0].includes('2026')) currentYear=2026;
+    if(typeof r[0]==='string'&&/202[0-9]/.test(r[0])){
+      const m=r[0].match(/202[0-9]/);
+      if(m) currentYear=parseInt(m[0]);
+    }
 
     // Month
     if(typeof r[0]==='string'&&r[0].endsWith('月份')){
@@ -2105,35 +2113,29 @@ function parseScheduleRows(rows){
     }
     if(currentMonth===null) return;
 
-    // SheetJS returns booleans as boolean, numbers as number
-    // Date row: numbers in day columns
-    const hasDates=dayCols.some(c=>isDayInt(Number(r[c]))||(/^\d+$/.test(String(r[c]))&&Number(r[c])>=1&&Number(r[c])<=31));
-    if(hasDates){
+    // Date row: actual integers (not bool) in day columns
+    if(dayCols.some(c=>isDayInt(r[c]))){
       currentDates={};
-      dayCols.forEach(c=>{
-        const v=Number(r[c]);
-        if(!isNaN(v)&&v>=1&&v<=31&&Number.isInteger(v)&&r[c]!==true&&r[c]!==false){
-          currentDates[c]=v;
-        }
-      });
+      dayCols.forEach(c=>{ if(isDayInt(r[c])) currentDates[c]=Number(r[c]); });
       return;
     }
 
-    // Task row: TRUE in day col, text in adjacent col
+    // Format 1: TRUE flag in day col → text in adjacent task col
+    let foundFlag=false;
     dayCols.forEach(dc=>{
       const cell=r[dc];
       if(cell===true||cell==='TRUE'||cell==='true'){
+        foundFlag=true;
         for(const offset of [1,-1]){
           const tc=dc+offset;
-          if(tc>=0&&tc<r.length&&typeof r[tc]==='string'&&r[tc].trim()){
+          if(tc>=0&&tc<r.length&&typeof r[tc]==='string'&&r[tc].trim()&&!headerValues.has(r[tc].trim())){
             const day=currentDates[dc];
             if(day){
               try{
                 const dt=new Date(currentYear,currentMonth-1,day);
                 const ds=dt.toISOString().slice(0,10);
                 const taskType=typeMap[tc]||'任務';
-                const text=r[tc].replace(/\n/g,' ').trim();
-                tasks.push({date:ds,task:`[${taskType}] ${text}`,selected:true});
+                tasks.push({date:ds,task:`[${taskType}] ${r[tc].replace(/\n/g,' ').trim()}`,selected:true});
               }catch(e){}
             }
             break;
@@ -2141,9 +2143,33 @@ function parseScheduleRows(rows){
         }
       }
     });
+    if(foundFlag) return;
+
+    // Format 2: text directly in odd (task type) columns, day determined by col-1
+    Object.entries(typeMap).forEach(([tcStr,taskType])=>{
+      const tc=parseInt(tcStr);
+      const cell=r[tc];
+      if(typeof cell==='string'&&cell.trim()&&!headerValues.has(cell.trim())){
+        const dc=tc-1; // corresponding day column
+        const day=currentDates[dc];
+        if(day){
+          try{
+            const dt=new Date(currentYear,currentMonth-1,day);
+            const ds=dt.toISOString().slice(0,10);
+            tasks.push({date:ds,task:`[${taskType}] ${cell.replace(/\n/g,' ').trim()}`,selected:true});
+          }catch(e){}
+        }
+      }
+    });
   });
 
-  return tasks;
+  // Deduplicate by date+task
+  const seen=new Set();
+  return tasks.filter(t=>{
+    const k=t.date+'|'+t.task;
+    if(seen.has(k)) return false;
+    seen.add(k); return true;
+  });
 }
 
 function showImportPreview(tasks){
