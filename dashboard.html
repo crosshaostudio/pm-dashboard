@@ -413,7 +413,7 @@ let ganttCellNotes = JSON.parse(localStorage.getItem('pm_gantt_notes')||'{}'); /
 
 
 const today=new Date(); today.setHours(0,0,0,0);
-function fmtDate(d){return d.toISOString().slice(0,10)}
+function fmtDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dy=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+dy}
 function dateOf(s){
   if(!s) return new Date(0);
   const str=String(s).trim();
@@ -1254,7 +1254,7 @@ async function generateRepeatTasks(srcTask){
     let d=new Date(srcDate);
     d.setDate(d.getDate()+7);
     while(d<=endDate){
-      const ds=d.toISOString().slice(0,10);
+      const ds=fmtDate(d);
       if(!existing.has(ds)) toCreate.push(ds);
       d.setDate(d.getDate()+7);
     }
@@ -1266,7 +1266,7 @@ async function generateRepeatTasks(srcTask){
       if(y>endDate.getFullYear()) break;
       const d=new Date(y,m-1,dom);
       if(d>endDate) break;
-      const ds=d.toISOString().slice(0,10);
+      const ds=fmtDate(d);
       if(!existing.has(ds)) toCreate.push(ds);
     }
   } else if(srcTask.repeat==='custom'&&srcTask.repeatRule){
@@ -1277,7 +1277,7 @@ async function generateRepeatTasks(srcTask){
     while(d<=endDate){
       const dow=d.getDay()===0?7:d.getDay();
       const dom2=d.getDate();
-      const ds=d.toISOString().slice(0,10);
+      const ds=fmtDate(d);
       if((wdays.includes(dow)||mdays.includes(dom2))&&!existing.has(ds)&&ds!==normDate(srcTask.date)){
         toCreate.push(ds);
       }
@@ -2205,7 +2205,7 @@ function parseScheduleRows(rows){
             if(day){
               try{
                 const dt=new Date(currentYear,currentMonth-1,day);
-                const ds=dt.toISOString().slice(0,10);
+                const ds=fmtDate(dt);
                 const taskType=typeMap[tc]||'任務';
                 tasks.push({date:ds,task:`[${taskType}] ${r[tc].replace(/\n/g,' ').trim()}`,selected:true});
               }catch(e){}
@@ -2227,7 +2227,7 @@ function parseScheduleRows(rows){
         if(day){
           try{
             const dt=new Date(currentYear,currentMonth-1,day);
-            const ds=dt.toISOString().slice(0,10);
+            const ds=fmtDate(dt);
             tasks.push({date:ds,task:`[${taskType}] ${cell.replace(/\n/g,' ').trim()}`,selected:true});
           }catch(e){}
         }
@@ -3160,7 +3160,7 @@ function toggleClosedInv(){
 function openAddInvoice(projId){
   document.querySelectorAll('.inv-add-form').forEach(f=>f.classList.remove('open'));
   const f=document.getElementById('inv-form-'+projId);
-  if(f){ f.classList.add('open'); document.getElementById('inv-date-'+projId).value=new Date().toISOString().slice(0,10); }
+  if(f){ f.classList.add('open'); document.getElementById('inv-date-'+projId).value=fmtDate(new Date()); }
 }
 function closeAddInvoice(projId){ document.getElementById('inv-form-'+projId).classList.remove('open'); }
 
@@ -3280,7 +3280,7 @@ async function injectRecurringTasks(rec){
   for(let m=0;m<4;m++){
     const d=new Date(now.getFullYear(), now.getMonth()+m, rec.dayOfMonth);
     if(d<now) continue;
-    const ds=d.toISOString().slice(0,10);
+    const ds=fmtDate(d);
     const already=tasks.find(t=>t.text===label&&t.date===ds);
     if(already) continue;
     const r=await api('addTask',{text:label,date:ds,projId:rec.projId,done:false,ganttStart:ds,ganttEnd:ds,prog:0});
