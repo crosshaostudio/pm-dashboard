@@ -1085,17 +1085,23 @@ function filteredProjects(includeAll=false){
 function filteredTasks(){
   let base=tasks;
 
-  // Only apply collapse filter when there IS an activeOwnerFilter or activeProject
-  // — otherwise show ALL tasks regardless of collapse state
   if(activeOwnerFilter){
     const ownerProjIds=projects.filter(p=>(p.owner||'未指派')===activeOwnerFilter&&p.status!=='closed').map(p=>String(p.id));
     base=base.filter(t=>ownerProjIds.includes(String(t.projId)));
-  } else if(activeProject) {
-    // Only filter by project
+  } else if(activeProject){
+    // filter by project only
   } else {
-    // No filter active: show all tasks from non-closed projects
+    // No filter: show all tasks from non-closed projects
     const activeProjIds=projects.filter(p=>p.status!=='closed'&&p.status!=='deleted').map(p=>String(p.id));
+    const before=base.length;
     base=base.filter(t=>activeProjIds.includes(String(t.projId))||!t.projId);
+    // Debug: if tasks were filtered, show why
+    if(base.length < before){
+      const missing=tasks.filter(t=>!activeProjIds.includes(String(t.projId))&&t.projId);
+      const missingProjIds=[...new Set(missing.map(t=>String(t.projId)))];
+      console.warn('[filteredTasks] filtered out',before-base.length,'tasks, missing projIds:',missingProjIds);
+      console.warn('[filteredTasks] known projIds:',activeProjIds.slice(0,5));
+    }
   }
 
   if(activeProject){
