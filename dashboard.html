@@ -419,7 +419,6 @@ function addDays(d,n){const r=new Date(d);r.setDate(r.getDate()+n);return r}
 function normDate(v){
   if(!v) return '';
   if(v instanceof Date){
-    // Use local date parts to avoid UTC offset
     const y=v.getFullYear(),m=String(v.getMonth()+1).padStart(2,'0'),d=String(v.getDate()).padStart(2,'0');
     return y+'-'+m+'-'+d;
   }
@@ -427,18 +426,24 @@ function normDate(v){
   if(!s||s==='9999-01-01') return s;
   // Sheets Date serial (number)
   if(/^\d+(\.\d+)?$/.test(s)){
-    // Convert serial to date using UTC to avoid timezone shift
     const d=new Date(Math.round((parseFloat(s)-25569)*86400000));
-    // Add 8 hours for Taiwan timezone
     const tw=new Date(d.getTime()+8*3600000);
     const y=tw.getUTCFullYear(),mo=String(tw.getUTCMonth()+1).padStart(2,'0'),dy=String(tw.getUTCDate()).padStart(2,'0');
     return y+'-'+mo+'-'+dy;
   }
-  // ISO with timezone offset e.g. 2026-06-03T16:00:00.000Z (UTC) = 2026-06-04 in Taiwan
-  // But Sheets usually stores as local time already, so just strip time part
-  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if(m) return m[1]+'-'+m[2]+'-'+m[3];
-  return s;
+  // ISO YYYY-MM-DD (with or without time part)
+  const m1=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m1) return m1[1]+'-'+m1[2]+'-'+m1[3];
+  // JS Date string: "Mon Jun 08 2026 00:00:00 GMT+0800" or similar
+  // Parse via Date constructor which handles locale strings
+  try{
+    const parsed=new Date(s);
+    if(!isNaN(parsed.getTime())){
+      const y=parsed.getFullYear(),mo=String(parsed.getMonth()+1).padStart(2,'0'),dy=String(parsed.getDate()).padStart(2,'0');
+      return y+'-'+mo+'-'+dy;
+    }
+  }catch(e){}
+  return '';
 }
 document.getElementById('today-str').textContent=today.toLocaleDateString('zh-TW',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
 document.getElementById('gantt-start').value=fmtDate(addDays(today,-3));
