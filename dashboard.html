@@ -507,7 +507,24 @@ async function syncAll(){
   const [t,p,m,n,r]=await Promise.all([
     api('getTasks'),api('getProjects'),api('getMembers'),api('getNotifs'),api('getReminders')
   ]);
-  if(t) tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),date:normDate(x.date),ganttStart:normDate(x.ganttStart),ganttEnd:normDate(x.ganttEnd),tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',repeatRule:x.repeatRule||''}));
+  if(t){
+    tasks=t.map(x=>({...x,id:String(x.id),projId:String(x.projId),
+      date:normDate(x.date),
+      ganttStart:normDate(x.ganttStart),
+      ganttEnd:normDate(x.ganttEnd),
+      tagColor:(x.tagColor&&x.tagColor!=='')?x.tagColor:'none',
+      repeat:(x.repeat&&x.repeat!=='')?x.repeat:'none',
+      repeatRule:x.repeatRule||''
+    }));
+    // Debug: show tasks with ganttStart but possibly wrong date
+    const ganttTasks=tasks.filter(t2=>t2.ganttStart&&t2.ganttEnd);
+    if(ganttTasks.length){
+      console.log('[sync] gantt tasks sample:',ganttTasks.slice(0,3).map(t2=>({id:t2.id,text:t2.text.slice(0,20),date:t2.date,gs:t2.ganttStart,ge:t2.ganttEnd})));
+    }
+    const today2=fmtDate(today);
+    const todayTasks=tasks.filter(t2=>t2.date===today2);
+    console.log('[sync] today('+today2+') tasks:',todayTasks.length,'total tasks:',tasks.length);
+  }
   if(p) projects=p.map(x=>({...x,id:String(x.id),status:x.status||'proposal',owner:x.owner||''})); if(m) members=m;
   if(n) notifications=n; if(r) reminders=r;
 
