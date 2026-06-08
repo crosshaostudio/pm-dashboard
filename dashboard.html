@@ -270,6 +270,7 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
         <button class="icon-btn" onclick="openPanel('notif')" title="通知"><i class="ti ti-bell" style="font-size:14px"></i><span id="notif-badge" class="badge" style="display:none"></span></button>
       <button class="icon-btn" onclick="openTagManager()" title="顏色標籤設定"><i class="ti ti-tags" style="font-size:14px"></i></button>
       <button class="icon-btn" onclick="openPanel('log')" title="編輯紀錄"><i class="ti ti-history" style="font-size:14px"></i></button>
+      <button class="icon-btn" onclick="exportBackup()" title="匯出備份 Excel"><i class="ti ti-database-export" style="font-size:14px"></i></button>
         <button class="icon-btn" onclick="openPanel('remind')" title="提醒"><i class="ti ti-alarm" style="font-size:14px"></i></button>
       </div>
     </div>
@@ -2072,6 +2073,49 @@ function showNoteTooltip(e,key){
 }
 function hideNoteTooltip(){
   document.getElementById('gantt-note-tip')?.remove();
+}
+// ─────────────────────────────────────────────────────────
+
+// ── Export Backup ─────────────────────────────────────────
+function exportBackup(){
+  if(!tasks.length&&!projects.length){showToast('尚無資料可備份');return;}
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Tasks sheet ──
+  const taskHeaders=['id','text','date','projId','done','ganttStart','ganttEnd','prog','assignee','remindAt','tagColor','repeat','repeatRule'];
+  const taskRows=tasks.map(t=>[
+    t.id, t.text, t.date, t.projId, t.done,
+    t.ganttStart||'', t.ganttEnd||'', t.prog||0,
+    t.assignee||'', t.remindAt||'',
+    t.tagColor||'', t.repeat||'none', t.repeatRule||''
+  ]);
+  const taskWs=XLSX.utils.aoa_to_sheet([taskHeaders,...taskRows]);
+  taskWs['!cols']=[{wch:16},{wch:40},{wch:12},{wch:16},{wch:6},{wch:12},{wch:12},{wch:6},{wch:12},{wch:12},{wch:14},{wch:10},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, taskWs, '待辦任務');
+
+  // ── Projects sheet ──
+  const projHeaders=['id','name','color','status','owner'];
+  const projRows=projects.map(p=>[p.id, p.name, p.color, p.status||'', p.owner||'']);
+  const projWs=XLSX.utils.aoa_to_sheet([projHeaders,...projRows]);
+  projWs['!cols']=[{wch:16},{wch:30},{wch:10},{wch:10},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, projWs, '專案');
+
+  // ── Members sheet ──
+  if(members.length){
+    const memHeaders=['id','name','initials','email','role'];
+    const memRows=members.map(m=>[m.id,m.name,m.initials,m.email,m.role]);
+    const memWs=XLSX.utils.aoa_to_sheet([memHeaders,...memRows]);
+    XLSX.utils.book_append_sheet(wb, memWs, '成員');
+  }
+
+  // ── Filename with timestamp ──
+  const now=new Date();
+  const ts=fmtDate(now)+'_'+String(now.getHours()).padStart(2,'0')+String(now.getMinutes()).padStart(2,'0');
+  const filename='PM備份_'+ts+'.xlsx';
+
+  XLSX.writeFile(wb, filename);
+  showToast('✓ 備份已下載：'+filename);
 }
 // ─────────────────────────────────────────────────────────
 
