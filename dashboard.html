@@ -2060,7 +2060,7 @@ function handleExcelUpload(input){
 
 function processExcelFile(file){
   // Use filename (without extension) as default group name
-  window.importFileName=file.name.replace(/\.xlsx?$/i,'').replace(/^_+/,'').trim().slice(0,30);
+  window.importFileName=file.name.replace(/[.]xlsx?$/i,'').replace(/^_+/,'').trim().slice(0,30);
   const reader=new FileReader();
   reader.onload=e=>{
     try{
@@ -2204,7 +2204,7 @@ function showImportPreview(tasks){
     <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <div style="flex:1;min-width:160px">
         <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">群組名稱</label>
-        <input type="text" id="import-group-name" placeholder="例：T368排程" value="${window.importFileName||'匯入排程'}"
+        <input type="text" id="import-group-name" placeholder="例：T368排程"
           style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit">
       </div>
       <div style="display:flex;gap:8px;align-items:flex-end;padding-bottom:1px">
@@ -2213,8 +2213,13 @@ function showImportPreview(tasks){
           <i class="ti ti-download"></i> 匯入
         </button>
       </div>
-    </div>\`;
+    </div>`;
   window.importTasks=tasks;
+  // Set group name input value after DOM renders
+  setTimeout(()=>{
+    const inp=document.getElementById('import-group-name');
+    if(inp) inp.value=window.importFileName||'匯入排程';
+  },0);
 }
 
 function importSelectAll(val){
@@ -2263,7 +2268,7 @@ async function confirmImport(){
   }
 
   renderGantt();renderDaily();renderProjects();
-  showToast(`✓ 匯入完成：${added} 筆任務已加入甘特圖、每日待辦，群組「${groupName}」`);
+  showToast('✓ 匯入完成：'+added+' 筆任務已加入甘特圖、每日待辦，群組「'+groupName+'」');
 }
 // ─────────────────────────────────────────────────────────
 
