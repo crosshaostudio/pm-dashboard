@@ -236,6 +236,9 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
 .import-task-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid #f0f0ed;font-size:12px}
 .import-task-row:last-child{border-bottom:none}
 .import-check{width:14px;height:14px;cursor:pointer;flex-shrink:0}
+
+.gantt-toggle-btn{background:none;border:0.5px solid #ddd;border-radius:6px;padding:2px 6px;font-size:10px;color:#aaa;cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0}
+.gantt-toggle-btn.on{background:#E6F1FB;border-color:#378ADD;color:#0C447C;font-weight:500}
 </style>
 </head>
 <body>
@@ -1521,11 +1524,23 @@ function renderDaily(){
         const t=tasks.find(x=>String(x.id)===String(tid));
         if(!t)return;
         const prevDate=t.date;
+        const prevGanttStart=t.ganttStart;
+        const prevGanttEnd=t.ganttEnd;
         t.date=ds;
+        // If task has a single-day gantt bar (start=end=old date), move it too
+        const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd)&&normDate(t.ganttStart)===normDate(prevDate);
+        if(isSingleDayGantt){ t.ganttStart=ds; t.ganttEnd=ds; }
         renderDaily();
-        const res=await api('updateTask',{id:String(t.id),date:ds});
-        if(res&&res.ok){showToast('✓ 任務已移動並同步');}
-        else{t.date=prevDate;renderDaily();showToast('❌ 移動失敗，已還原');}
+        const updateData={id:String(t.id),date:ds};
+        if(isSingleDayGantt){ updateData.ganttStart=ds; updateData.ganttEnd=ds; }
+        const res=await api('updateTask',updateData);
+        if(res&&res.ok){
+          if(isSingleDayGantt) renderGantt();
+          showToast(isSingleDayGantt?'✓ 任務已移動，甘特圖同步更新':'✓ 任務已移動並同步');
+        } else {
+          t.date=prevDate; t.ganttStart=prevGanttStart; t.ganttEnd=prevGanttEnd;
+          renderDaily();showToast('❌ 移動失敗，已還原');
+        }
       };
 
       const wd=day.toLocaleDateString('zh-TW',{weekday:'short'});
@@ -1536,8 +1551,9 @@ function renderDaily(){
           ${isToday?'<span class="today-badge">今天</span>':''}
         </div>
         <div class="day-body" id="body-${ds}"></div>
-        <div style="padding:3px 7px">
-          <input class="add-task-input" placeholder="＋ 新增待辦" onkeydown="if(event.key==='Enter')quickAdd(this,'${ds}')">
+        <div style="padding:3px 7px;display:flex;align-items:center;gap:4px">
+          <input class="add-task-input" style="flex:1" placeholder="＋ 新增待辦" onkeydown="if(event.key==='Enter')quickAdd(this,'${ds}',this.nextElementSibling?.classList.contains('on'))">
+          <button class="gantt-toggle-btn" title="同時建立甘特圖" onclick="this.classList.toggle('on')" tabindex="-1">甘特</button>
         </div>`;
       grid.appendChild(card);
       const body=document.getElementById('body-'+ds);
@@ -1725,9 +1741,8 @@ function startRenameTask(id, btn){
   if(textDiv) textDiv.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
 }
 
-async function quickAdd(input,date){
+async function quickAdd(input, date, createGantt){
   const text=input.value.trim();if(!text)return;
-  // Use active project, or first project of active owner filter, or first project overall
   let projId=activeProject;
   if(!projId&&activeOwnerFilter){
     const ownerProj=projects.find(p=>(p.owner||'未指派')===activeOwnerFilter&&p.status!=='closed');
@@ -1736,17 +1751,18 @@ async function quickAdd(input,date){
   if(!projId) projId=projects.find(p=>p.status!=='closed')?.id||null;
   input.value='';
   input.disabled=true;
-  const res=await api('addTask',{text,date,projId,done:false,prog:0});
+  const ganttStart=createGantt?date:'';
+  const ganttEnd=createGantt?date:'';
+  const res=await api('addTask',{text,date,projId,done:false,prog:0,ganttStart,ganttEnd,tagColor:'',repeat:'none',repeatRule:''});
   input.disabled=false;
   if(res&&res.id){
-    tasks.push({id:String(res.id),text,date,projId:String(projId),done:false,prog:0,ganttStart:'',ganttEnd:'',tagColor:'none',repeat:'none',repeatRule:''});
+    tasks.push({id:String(res.id),text,date,projId:String(projId),done:false,prog:0,ganttStart,ganttEnd,tagColor:'none',repeat:'none',repeatRule:''});
     renderDaily();renderProjects();
-    showToast('✓ 已新增並同步 (id:'+res.id+')');
+    if(createGantt) renderGantt();
+    showToast(createGantt?'✓ 已新增並建立甘特圖':'✓ 已新增並同步');
   } else {
     input.value=text;
-    const errMsg=res?JSON.stringify(res):'no response';
-    showToast('❌ 新增失敗：'+errMsg);
-    console.error('[quickAdd] failed:', res);
+    showToast('❌ 新增失敗');
   }
 }
 
@@ -1796,14 +1812,22 @@ async function deleteTask(id){
 async function moveTask(id){
   const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
   const d=prompt('移動到哪天？（YYYY-MM-DD）',t.date);
-  if(d&&/^\d{4}-\d{2}-\d{2}$/.test(d)){
+  if(d&&/\d{4}-\d{2}-\d{2}/.test(d)){
     const prev=t.date;
-    t.date=d;renderDaily();
-    const res=await api('updateTask',{id:String(t.id),date:d});
+    const prevGS=t.ganttStart, prevGE=t.ganttEnd;
+    const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd)&&normDate(t.ganttStart)===normDate(prev);
+    t.date=d;
+    if(isSingleDayGantt){ t.ganttStart=d; t.ganttEnd=d; }
+    renderDaily();
+    const updateData={id:String(t.id),date:d};
+    if(isSingleDayGantt){ updateData.ganttStart=d; updateData.ganttEnd=d; }
+    const res=await api('updateTask',updateData);
     if(!res||res.error){
-      t.date=prev;renderDaily();showToast('❌ 移動失敗，請重試');
+      t.date=prev; t.ganttStart=prevGS; t.ganttEnd=prevGE;
+      renderDaily();showToast('❌ 移動失敗，請重試');
     } else {
-      showToast('✓ 已移動並同步');
+      if(isSingleDayGantt) renderGantt();
+      showToast(isSingleDayGantt?'✓ 已移動，甘特圖同步更新':'✓ 已移動並同步');
     }
   }
 }
