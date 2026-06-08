@@ -1556,7 +1556,7 @@ function renderDaily(){
         const prevGanttEnd=t.ganttEnd;
         t.date=ds;
         // If task has a single-day gantt bar (start=end=old date), move it too
-        const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd)&&normDate(t.ganttStart)===normDate(prevDate);
+        const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd);
         if(isSingleDayGantt){ t.ganttStart=ds; t.ganttEnd=ds; }
         renderDaily();
         const updateData={id:String(t.id),date:ds};
@@ -1843,7 +1843,7 @@ async function moveTask(id){
   if(d&&/\d{4}-\d{2}-\d{2}/.test(d)){
     const prev=t.date;
     const prevGS=t.ganttStart, prevGE=t.ganttEnd;
-    const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd)&&normDate(t.ganttStart)===normDate(prev);
+    const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd);
     t.date=d;
     if(isSingleDayGantt){ t.ganttStart=d; t.ganttEnd=d; }
     renderDaily();
