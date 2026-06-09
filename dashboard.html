@@ -203,7 +203,9 @@ body[data-role='viewer'] .add-proj-btn,
 body[data-role='viewer'] .g-btn.primary { display:none !important; }
 
 body[data-role='editor'] .task-action-btn[title='刪除專案'],
-body[data-role='editor'] .add-proj-btn { display:none !important; }
+
+/* personal: can add project, cannot delete others' projects */
+body[data-role='personal'] .task-action-btn[title='刪除專案'] { display:none !important; }
 
 body[data-role='viewer'] .proj-status-select { pointer-events:none; opacity:.6; }
 body[data-role='editor'] .add-proj-btn { display:none !important; }
@@ -738,9 +740,13 @@ function applyRoleUI(){
   });
 
   // Hide structural buttons for editors and viewers
-  if(!isOwner){
-    // editors can't: delete project, reorder, add/delete project
+  if(!isOwner&&!isPersonal){
+    // editors can't: add project
     document.querySelectorAll('.add-proj-btn').forEach(el=>el.style.display='none');
+  }
+  if(isPersonal){
+    // personal: show add project button
+    document.querySelectorAll('.add-proj-btn').forEach(el=>el.style.display='');
   }
 
   // Store role indicator on body for CSS targeting
@@ -2218,7 +2224,7 @@ function renderTaskEl(t){
   const projOwner=taskProj?taskProj.owner||'':'';
   const projCollabs=taskProj?(taskProj.collaborators||'').split(',').map(s=>s.trim()).filter(Boolean):[];
   const userCanEditProj=(projOwner===currentUser||projCollabs.includes(currentUser));
-  const editorCanEdit=(currentRole==='editor'||currentRole==='personal')&&taskProj&&userCanEditProj;
+  const editorCanEdit=currentRole==='editor'||(currentRole==='personal'&&taskProj&&userCanEditProj);
   const isReadOnly=currentRole==='viewer'||((currentRole==='editor'||currentRole==='personal')&&!editorCanEdit);
   const el=document.createElement('div');
   el.className='task-item';
@@ -3710,10 +3716,10 @@ function renderInvoice(){
   // Respect left sidebar collapse state — show only expanded owners' projects
   const allActiveProjs = projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
   const expandedOwners = getExpandedOwners();
-  // Only filter by expanded owners when actively filtering; otherwise show all
+  // Respect sidebar collapse: only show expanded owners' projects
   const activeProjs = activeOwnerFilter
     ? allActiveProjs.filter(p=>(p.owner||'未指派')===activeOwnerFilter)
-    : allActiveProjs;
+    : allActiveProjs.filter(p=>expandedOwners.includes(p.owner||'未指派'));
   const closedProjs = projects.filter(p=>p.status==='closed');
 
   function makeInvCard(p, isClosed){
