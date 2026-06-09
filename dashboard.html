@@ -271,6 +271,11 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
 .ho-cloud-brand{font-size:10px;padding:2px 6px;border-radius:6px;background:#E6F1FB;color:#0C447C;flex-shrink:0;font-weight:500}
 .ho-cloud-desc{font-size:12px;color:#1a1a18;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ho-cloud-cat{font-size:10px;color:#888;flex-shrink:0}
+
+.task-item.drag-over-top{border-top:2px solid #378ADD !important}
+.task-item.drag-over-bottom{border-bottom:2px solid #378ADD !important}
+.task-item.dragging-sort{opacity:.4}
+.daily-proj-sel{font-family:inherit;outline:none;cursor:pointer;color:#555}
 </style>
 </head>
 <body>
@@ -456,6 +461,7 @@ let ganttGroupCollapsed = JSON.parse(localStorage.getItem('pm_gantt_group_collap
 let ganttOrder = JSON.parse(localStorage.getItem('pm_gantt_order')||'[]');
 let ganttGroups = JSON.parse(localStorage.getItem('pm_gantt_groups')||'{}'); // {taskId: groupName}
 let ganttCellNotes = JSON.parse(localStorage.getItem('pm_gantt_notes')||'{}'); // {'taskId_date': {note,color}}
+let dailyTaskOrder = JSON.parse(localStorage.getItem('pm_daily_order')||'{}'); // {'YYYY-MM-DD': [id,id,...]}
 
 
 const today=new Date(); today.setHours(0,0,0,0);
@@ -2215,13 +2221,28 @@ function renderDaily(){
           ${isToday?'<span class="today-badge">今天</span>':''}
         </div>
         <div class="day-body" id="body-${ds}"></div>
-        <div style="padding:3px 7px;display:flex;align-items:center;gap:4px">
-          <input class="add-task-input" style="flex:1" placeholder="＋ 新增待辦" onkeydown="if(event.key==='Enter')quickAdd(this,'${ds}',this.nextElementSibling?.classList.contains('on'))">
+        <div style="padding:3px 7px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+          <select class="daily-proj-sel" id="proj-sel-${ds}" title="選擇專案" style="font-size:10px;padding:2px 4px;border:0.5px solid #ddd;border-radius:6px;background:#fff;max-width:90px;flex-shrink:0">
+            <option value="">選專案</option>
+            ${projects.filter(p=>p.status!=='closed').map(p=>`<option value="${p.id}"${String(activeProject)===String(p.id)?'selected':''}>${p.name}</option>`).join('')}
+          </select>
+          <input class="add-task-input" style="flex:1;min-width:80px" placeholder="＋ 新增待辦" onkeydown="if(event.key==='Enter')quickAddWithProj(this,'${ds}',this.previousElementSibling,this.nextElementSibling?.classList.contains('on'))">
           <button class="gantt-toggle-btn" title="同時建立甘特圖" onclick="this.classList.toggle('on')" tabindex="-1">甘特</button>
         </div>`;
       grid.appendChild(card);
       const body=document.getElementById('body-'+ds);
-      const sorted=[...dayTasks.filter(t=>!(t.done===true||String(t.done)==='true')),...dayTasks.filter(t=>t.done===true||String(t.done)==='true')];
+      // Apply saved per-day order
+      const savedOrder=dailyTaskOrder[ds]||[];
+      const undone=dayTasks.filter(t=>!(t.done===true||String(t.done)==='true'));
+      const done=dayTasks.filter(t=>t.done===true||String(t.done)==='true');
+      function applyOrder(arr){
+        if(!savedOrder.length) return arr;
+        const ordered=[], rest=[];
+        savedOrder.forEach(id=>{ const t=arr.find(x=>String(x.id)===id); if(t) ordered.push(t); });
+        arr.forEach(t=>{ if(!savedOrder.includes(String(t.id))) rest.push(t); });
+        return [...ordered,...rest];
+      }
+      const sorted=[...applyOrder(undone),...done];
       sorted.forEach(t=>body.appendChild(renderTaskEl(t)));
     });
   }
@@ -2260,9 +2281,53 @@ function renderTaskEl(t){
   el.style.borderLeftColor=tc.border;
   if(isDark) el.style.color='#fff';
   if(isReadOnly&&currentRole==='editor') el.style.opacity='.6';
+  el.dataset.taskId=String(t.id);
+  el.dataset.taskDate=t.date;
   el.ondragstart=e=>{
     if(isReadOnly){e.preventDefault();return;}
-    e.dataTransfer.setData('text/plain',String(t.id));
+    // Alt/Option key = cross-day move; normal = same-day sort
+    if(e.altKey){
+      e.dataTransfer.setData('text/plain',String(t.id));
+    } else {
+      e.dataTransfer.setData('sort-task',String(t.id));
+      e.dataTransfer.setData('text/plain',String(t.id));
+      el.classList.add('dragging-sort');
+    }
+  };
+  el.ondragend=e=>{ el.classList.remove('dragging-sort'); document.querySelectorAll('.task-item').forEach(x=>x.classList.remove('drag-over-top','drag-over-bottom')); };
+  el.ondragover=e=>{
+    // Only handle same-day sort here; cross-day handled by card
+    const srcId=e.dataTransfer.types.includes('sort-task')?'sort':'move';
+    if(srcId==='sort'){
+      e.preventDefault(); e.stopPropagation();
+      document.querySelectorAll('.task-item').forEach(x=>x.classList.remove('drag-over-top','drag-over-bottom'));
+      const rect=el.getBoundingClientRect();
+      const mid=rect.top+rect.height/2;
+      el.classList.add(e.clientY<mid?'drag-over-top':'drag-over-bottom');
+    }
+  };
+  el.ondrop=e=>{
+    const sortId=e.dataTransfer.getData('sort-task');
+    if(!sortId) return; // let card handle cross-day drop
+    e.preventDefault(); e.stopPropagation();
+    const targetId=String(t.id);
+    if(sortId===targetId) return;
+    const ds=t.date;
+    const body=el.closest('.day-body');
+    if(!body) return;
+    // Rebuild order from DOM
+    const ids=[...body.querySelectorAll('.task-item')].map(x=>x.dataset.taskId).filter(Boolean);
+    const fromIdx=ids.indexOf(sortId);
+    const toIdx=ids.indexOf(targetId);
+    if(fromIdx<0||toIdx<0) return;
+    ids.splice(fromIdx,1);
+    const rect=el.getBoundingClientRect();
+    const insertAfter=e.clientY>=rect.top+rect.height/2;
+    ids.splice(insertAfter?toIdx:toIdx,0,sortId);
+    dailyTaskOrder[ds]=ids;
+    localStorage.setItem('pm_daily_order',JSON.stringify(dailyTaskOrder));
+    document.querySelectorAll('.task-item').forEach(x=>x.classList.remove('drag-over-top','drag-over-bottom'));
+    renderDaily();
   };
 
   const textDiv=document.createElement('div');
@@ -2408,9 +2473,14 @@ function startRenameTask(id, btn){
   if(textDiv) textDiv.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
 }
 
-async function quickAdd(input, date, createGantt){
+async function quickAddWithProj(input, date, projSel, createGantt){
+  const overrideProjId=projSel?projSel.value:'';
+  return quickAdd(input, date, createGantt, overrideProjId);
+}
+
+async function quickAdd(input, date, createGantt, overrideProjId){
   const text=input.value.trim();if(!text)return;
-  let projId=activeProject;
+  let projId=overrideProjId||activeProject;
   if(!projId&&activeOwnerFilter){
     const ownerProj=projects.find(p=>(p.owner||'未指派')===activeOwnerFilter&&p.status!=='closed');
     if(ownerProj) projId=ownerProj.id;
