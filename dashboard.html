@@ -578,7 +578,7 @@ async function syncAll(){
     const todayTasks=tasks.filter(t2=>t2.date===today2);
     console.log('[sync] today('+today2+') tasks:',todayTasks.length,'total tasks:',tasks.length);
   }
-  if(p) projects=p.map(x=>({...x,id:String(x.id),status:x.status||'proposal',owner:x.owner||''})); if(m) members=m;
+  if(p) projects=p.map(x=>({...x,id:String(x.id),status:x.status||'proposal',owner:x.owner||'',collaborators:x.collaborators||''})); if(m) members=m;
   if(n) notifications=n; if(r) reminders=r;
 
   if(!projects.length){
@@ -697,7 +697,8 @@ let dragSrcId = null;
 
 function applyRoleUI(){
   const isViewer = currentRole === 'viewer';
-  const isEditor = currentRole === 'editor';
+  const isPersonal = currentRole === 'personal';
+  const isEditor = currentRole === 'editor' || isPersonal;
   const isOwner  = currentRole === 'owner';
 
   // Role badge on status
@@ -754,6 +755,70 @@ function editMyName(e){
   localStorage.setItem('pm_current_user', currentUser);
   renderProjects();
   showToast('✓ 名字已更新：'+currentUser);
+}
+
+function openCollabPicker(projId, e){
+  e.stopPropagation();
+  document.querySelectorAll('.collab-picker-popup').forEach(p=>p.remove());
+  const proj=projects.find(x=>String(x.id)===String(projId));if(!proj)return;
+  const curCollabs=(proj.collaborators||'').split(',').map(s=>s.trim()).filter(Boolean);
+
+  // Known personal users from projects
+  const knownUsers=[...new Set(projects.map(p=>p.owner).filter(Boolean))].filter(u=>u!==proj.owner);
+
+  const popup=document.createElement('div');
+  popup.className='collab-picker-popup';
+  popup.style.cssText='position:fixed;z-index:1000;background:#fff;border:0.5px solid #ddd;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:8px;min-width:200px';
+
+  const title=document.createElement('div');
+  title.style.cssText='font-size:10px;color:#888;font-weight:500;padding:4px 8px;margin-bottom:4px';
+  title.textContent='協作者（可編輯此專案）';
+  popup.appendChild(title);
+
+  knownUsers.forEach(user=>{
+    const isCollab=curCollabs.includes(user);
+    const row=document.createElement('div');
+    row.className='tag-picker-row';
+    row.innerHTML=`
+      <div style="width:20px;height:20px;border-radius:50%;background:#E6F1FB;color:#185FA5;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">${user.slice(0,1)}</div>
+      <span style="flex:1;font-size:12px">${user}</span>
+      <input type="checkbox" ${isCollab?'checked':''} onchange="toggleCollab('${projId}','${user}',this.checked)" onclick="event.stopPropagation()">`;
+    popup.appendChild(row);
+  });
+
+  // Add custom name
+  const addRow=document.createElement('div');
+  addRow.className='tag-picker-row';
+  addRow.style.cssText='border-top:0.5px solid #f0f0ed;margin-top:4px;padding-top:8px';
+  addRow.innerHTML=`<i class="ti ti-plus" style="font-size:11px;color:#4F7BE9;width:16px"></i><span style="font-size:12px;color:#4F7BE9">新增協作者...</span>`;
+  addRow.onclick=ev=>{
+    ev.stopPropagation();popup.remove();
+    const name=prompt('輸入協作者名字（需與其登入名字一致）：','');
+    if(name&&name.trim()) toggleCollab(projId,name.trim(),true);
+  };
+  popup.appendChild(addRow);
+
+  document.body.appendChild(popup);
+  const btn=e.currentTarget||e.target;
+  const rect=btn.getBoundingClientRect();
+  let left=rect.right+4, top=rect.top;
+  if(left+210>window.innerWidth-8) left=Math.max(8,rect.left-214);
+  if(top+200>window.innerHeight-8) top=Math.max(8,window.innerHeight-208);
+  popup.style.left=left+'px';popup.style.top=top+'px';
+  const close=()=>{popup.remove();document.removeEventListener('click',close);};
+  setTimeout(()=>document.addEventListener('click',close),0);
+}
+
+async function toggleCollab(projId, user, add){
+  const proj=projects.find(x=>String(x.id)===String(projId));if(!proj)return;
+  let collabs=(proj.collaborators||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(add&&!collabs.includes(user)) collabs.push(user);
+  if(!add) collabs=collabs.filter(u=>u!==user);
+  const collabStr=collabs.join(',');
+  proj.collaborators=collabStr;
+  renderProjects();
+  await api('updateProject',{id:String(projId),collaborators:collabStr});
+  showToast(add?'✓ 已新增協作者：'+user:'✓ 已移除協作者：'+user);
 }
 
 function openOwnerPicker(projId, e){
@@ -896,10 +961,11 @@ function renderProjects(){
         arrowBtn.innerHTML=`<i class="ti ${isNowCollapsed?'ti-chevron-right':'ti-chevron-down'}" style="font-size:11px"></i>`;
         arrowBtn.title=isNowCollapsed?'展開':'收合';
       }
-      // Also re-render gantt and invoice to reflect new collapse state
+      // Sync collapse state to all tabs
       renderGantt();
-      if(document.getElementById('view-invoice').classList.contains('active')) renderInvoice();
       renderDaily();
+      if(document.getElementById('view-invoice').classList.contains('active')) renderInvoice();
+      if(document.getElementById('view-handover').classList.contains('active')) renderHandover();
     };
 
     // ── Avatar ──
@@ -969,8 +1035,10 @@ function renderProjects(){
     const actions=document.createElement('div');
     actions.className='proj-actions';
     actions.style.cssText='display:none;gap:2px;align-items:center;flex-shrink:0';
+    const canManageProj=currentRole==='owner'||(currentRole==='personal'&&(p.owner||'')=== currentUser);
     actions.innerHTML=`
       ${currentRole==='owner'?`<button class="task-action-btn" title="指派負責人" onclick="openOwnerPicker('${p.id}',event)" style="font-size:12px"><i class="ti ti-user-circle" aria-hidden="true"></i></button>`:''}
+      ${canManageProj?`<button class="task-action-btn" title="指派協作者" onclick="openCollabPicker('${p.id}',event)" style="font-size:12px"><i class="ti ti-users" aria-hidden="true"></i></button>`:''}
       ${currentRole==='owner'?`<button class="task-action-btn" title="刪除專案" onclick="deleteProjectById('${p.id}',event)" style="font-size:12px;color:#E24B4A"><i class="ti ti-trash" aria-hidden="true"></i></button>`:''}`;
 
     el.onmouseenter=()=>{ actions.style.display='flex'; count.style.display='none'; };
@@ -1529,7 +1597,17 @@ function renderContactsTab(){
     return;
   }
 
-  // Group by brand
+  // Group by brand — respect left sidebar collapse (filter by expanded owners' projects)
+  const expandedOwners=getExpandedOwners();
+  const visibleProjIds=projects
+    .filter(p=>p.status!=='closed'&&expandedOwners.includes(p.owner||'未指派'))
+    .map(p=>String(p.id));
+  // Show contacts whose brand matches a visible project name
+  const visibleBrands=new Set([
+    ...projects.filter(p=>visibleProjIds.includes(String(p.id))).map(p=>p.name),
+    ...(activeOwnerFilter?[]:contacts.map(c=>c.brand)) // if no filter, show all
+  ]);
+
   const brands = [...new Set(contacts.map(c=>c.brand).filter(Boolean))];
   body.innerHTML = brands.map(brand=>{
     const brandContacts = contacts.filter(c=>String(c.brand)===String(brand));
@@ -2137,8 +2215,11 @@ function renderTaskEl(t){
   const isDark=tc.id==='black';
   // For editors: check if they own this task's project
   const taskProj=projects.find(p=>String(p.id)===String(t.projId));
-  const editorCanEdit=currentRole==='editor'&&taskProj&&(taskProj.owner||'')===currentUser;
-  const isReadOnly=currentRole==='viewer'||(currentRole==='editor'&&!editorCanEdit);
+  const projOwner=taskProj?taskProj.owner||'':'';
+  const projCollabs=taskProj?(taskProj.collaborators||'').split(',').map(s=>s.trim()).filter(Boolean):[];
+  const userCanEditProj=(projOwner===currentUser||projCollabs.includes(currentUser));
+  const editorCanEdit=(currentRole==='editor'||currentRole==='personal')&&taskProj&&userCanEditProj;
+  const isReadOnly=currentRole==='viewer'||((currentRole==='editor'||currentRole==='personal')&&!editorCanEdit);
   const el=document.createElement('div');
   el.className='task-item';
   el.draggable=!isReadOnly;
