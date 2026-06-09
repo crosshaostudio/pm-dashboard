@@ -556,7 +556,14 @@ async function syncAll(){
   setStatus('loading','載入中...');
   // Detect role via a lightweight getProjects call first
   const roleCheck=await api('getProjects');
-  if(roleCheck&&roleCheck._role) currentRole=roleCheck._role;
+  if(roleCheck&&roleCheck._role){
+    currentRole=roleCheck._role;
+    // For personal tokens, server returns the person's name
+    if(roleCheck._userName){
+      currentUser=roleCheck._userName;
+      localStorage.setItem('pm_current_user', currentUser);
+    }
+  }
   applyRoleUI();
   checkGanttReminders();
   const [t,p,m,n,r]=await Promise.all([
@@ -1214,22 +1221,16 @@ function filteredTasks(){
   let base=tasks;
 
   if(activeOwnerFilter){
+    // Explicit owner filter selected
     const ownerProjIds=projects.filter(p=>(p.owner||'未指派')===activeOwnerFilter&&p.status!=='closed').map(p=>String(p.id));
     base=base.filter(t=>ownerProjIds.includes(String(t.projId)));
-  } else if(activeProject){
-    // filter by project only
   } else {
-    // No filter: show all tasks from non-closed projects
-    const activeProjIds=projects.filter(p=>p.status!=='closed'&&p.status!=='deleted').map(p=>String(p.id));
-    const before=base.length;
-    base=base.filter(t=>activeProjIds.includes(String(t.projId))||!t.projId);
-    // Debug: if tasks were filtered, show why
-    if(base.length < before){
-      const missing=tasks.filter(t=>!activeProjIds.includes(String(t.projId))&&t.projId);
-      const missingProjIds=[...new Set(missing.map(t=>String(t.projId)))];
-      console.warn('[filteredTasks] filtered out',before-base.length,'tasks, missing projIds:',missingProjIds);
-      console.warn('[filteredTasks] known projIds:',activeProjIds.slice(0,5));
-    }
+    // Respect collapse: only show tasks from expanded owner sections
+    const expandedOwners=getExpandedOwners();
+    const visibleProjIds=projects
+      .filter(p=>p.status!=='closed'&&p.status!=='deleted'&&expandedOwners.includes(p.owner||'未指派'))
+      .map(p=>String(p.id));
+    base=base.filter(t=>visibleProjIds.includes(String(t.projId))||!t.projId);
   }
 
   if(activeProject){
