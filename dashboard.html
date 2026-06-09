@@ -520,12 +520,19 @@ async function api(action, body={}) {
       return null;
     }
     if(data && data.error){console.warn('[API error]', action, data.error);}
-    // Update role from response
-    if(data && data._role && data._role!==currentRole){
-      currentRole=data._role;
-      applyRoleUI();
+    // Update role and userName from response
+    if(data && data._role){
+      if(data._role!==currentRole){ currentRole=data._role; applyRoleUI(); }
     }
-    setStatus('ok', currentRole==='owner'?'擁有者':currentRole==='editor'?'編輯者':'檢視者');
+    if(data && data._userName && data._userName!==currentUser){
+      currentUser=data._userName;
+      localStorage.setItem('pm_current_user',currentUser);
+      renderProjects();
+    }
+    const roleLabel=currentRole==='owner'?'擁有者':currentRole==='personal'?currentUser:currentRole==='editor'?'編輯者':'檢視者';
+    setStatus('ok', roleLabel||'已連線');
+    // Unwrap array responses: {data:[...], _role, _userName} → [...]
+    if(data && Array.isArray(data.data)) return data.data;
     return data;
   } catch(e) {
     setStatus('err','連線失敗');
