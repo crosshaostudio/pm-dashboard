@@ -423,7 +423,7 @@ let ACCESS_TOKEN = localStorage.getItem('pm_token') || '';
 
 
 let projects=[], tasks=[], members=[], notifications=[], reminders=[];
-let currentUser = localStorage.getItem('pm_current_user') || '我';
+let currentUser = localStorage.getItem('pm_current_user') || '';
 let currentRole = 'owner'; // optimistic default; corrected after first API response
 let activeOwnerFilter = null;
 
@@ -559,12 +559,22 @@ async function syncAll(){
   if(roleCheck&&roleCheck._role){
     currentRole=roleCheck._role;
     // For personal tokens, server returns the person's name
+    // Set BEFORE any rendering so addProject uses correct user
     if(roleCheck._userName){
       currentUser=roleCheck._userName;
       localStorage.setItem('pm_current_user', currentUser);
     }
   }
   applyRoleUI();
+  // If still no name after role check, prompt user to set their name
+  if(!currentUser){
+    const name=prompt('請輸入你的名字（用於識別操作者）：','');
+    if(name&&name.trim()){
+      currentUser=name.trim();
+      localStorage.setItem('pm_current_user',currentUser);
+    }
+  }
+  renderProjects(); // Update name display immediately after role is known
   checkGanttReminders();
   const [t,p,m,n,r]=await Promise.all([
     api('getTasks'),api('getProjects'),api('getMembers'),api('getNotifs'),api('getReminders')
@@ -762,7 +772,7 @@ function applyRoleUI(){
 
 function editMyName(e){
   e.stopPropagation();
-  const name=prompt('輸入你的名字（讓其他人認識你）：', currentUser);
+  const name=prompt('輸入你的名字（讓其他人認識你）：', currentUser||'');
   if(!name||!name.trim()) return;
   currentUser=name.trim();
   localStorage.setItem('pm_current_user', currentUser);
@@ -904,8 +914,8 @@ function renderProjects(){
   // Update my name display
   const myNameEl=document.getElementById('my-name');
   const myAvEl=document.getElementById('my-avatar');
-  if(myNameEl) myNameEl.textContent=currentUser;
-  if(myAvEl) myAvEl.textContent=currentUser.slice(0,1);
+  if(myNameEl) myNameEl.textContent=currentUser||'（未設定名字）';
+  if(myAvEl) myAvEl.textContent=currentUser?currentUser.slice(0,1):'?';
 
   const activeProjs=projects.filter(p=>p.status!=='closed'&&p.status!=='deleted');
   const closedProjs=projects.filter(p=>p.status==='closed');
@@ -2476,12 +2486,22 @@ async function moveTask(id){
 async function addProject(){
   const name=prompt('專案名稱：');if(!name)return;
   const color=COLORS[projects.length%COLORS.length];
-  // Auto-assign current user as owner
+  // If personal role, make sure we have the right username before adding
+  // Do a quick check to get _userName if not set yet
+  if(currentRole==='personal'&&currentUser==='我'){
+    const check=await api('getProjects');
+    if(check&&check._userName){
+      currentUser=check._userName;
+      localStorage.setItem('pm_current_user',currentUser);
+    }
+  }
   const res=await api('addProject',{name,color,members:[0],owner:currentUser});
   if(res&&res.id){
-    projects.push({id:String(res.id),name,color,status:'proposal',owner:res.owner||currentUser});
+    // Server may return confirmed _userName
+    const confirmedOwner=res.owner||currentUser;
+    projects.push({id:String(res.id),name,color,status:'proposal',owner:confirmedOwner,collaborators:''});
     renderProjects();
-    showToast('✓ 專案已建立，自動指派給：'+( res.owner||currentUser));
+    showToast('✓ 專案已建立，自動指派給：'+confirmedOwner);
   }
   else if(res&&res.error){showToast('❌ 建立失敗：'+res.error);}
 }
