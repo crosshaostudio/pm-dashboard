@@ -808,8 +808,11 @@ function openCollabPicker(projId, e){
   const proj=projects.find(x=>String(x.id)===String(projId));if(!proj)return;
   const curCollabs=(proj.collaborators||'').split(',').map(s=>s.trim()).filter(Boolean);
 
-  // Known personal users from projects
-  const knownUsers=[...new Set(projects.map(p=>p.owner).filter(Boolean))].filter(u=>u!==proj.owner);
+  // Use Members sheet for known users
+  const knownUsers=[...new Set([
+    ...members.filter(m=>m.role==='personal'||m.role==='owner').map(m=>m.name||'').filter(Boolean),
+    ...projects.map(p=>p.owner||'').filter(Boolean)
+  ])].filter(Boolean).filter(u=>u!==proj.owner);
 
   const popup=document.createElement('div');
   popup.className='collab-picker-popup';
@@ -871,8 +874,12 @@ function openOwnerPicker(projId, e){
   document.querySelectorAll('.owner-picker-popup').forEach(p=>p.remove());
   const p=projects.find(x=>String(x.id)===String(projId));if(!p)return;
 
-  // Collect all known owners from existing projects + currentUser
-  const knownOwners=[...new Set([currentUser,...projects.map(x=>x.owner||'').filter(Boolean)])];
+  // Use Members sheet for known users (personal role members)
+  const knownOwners=[...new Set([
+    currentUser,
+    ...members.filter(m=>m.role==='personal'||m.role==='owner').map(m=>m.name||'').filter(Boolean),
+    ...projects.map(x=>x.owner||'').filter(Boolean)
+  ])].filter(Boolean);
 
   const popup=document.createElement('div');
   popup.className='owner-picker-popup';
@@ -955,6 +962,11 @@ function renderProjects(){
     const owner=p.owner||'未指派';
     if(!ownerMap[owner]) ownerMap[owner]=[];
     ownerMap[owner].push(p);
+  });
+
+  // Add members from Members sheet who have no projects yet
+  members.filter(m=>(m.role==='personal'||m.role==='owner')&&m.name).forEach(m=>{
+    if(!ownerMap[m.name]) ownerMap[m.name]=[];
   });
 
   // Sort: currentUser first, then alphabetical, unassigned last
