@@ -1674,7 +1674,7 @@ function renderContactsTab(){
     const vendorsUniq = vendors.filter((v,i)=>vendors.findIndex(x=>x.name===v.name)===i);
 
     // Projects
-    const projects2 = brandContacts.filter(c=>c.project).map(c=>({proj:c.project,progress:c.progress}));
+    const projects2 = brandContacts.filter(c=>c.project).map(c=>({id:String(c.id),proj:c.project,progress:c.progress,status:c.projStatus||'執行中'}));
 
     return `<div class="ho-section">
       <div class="ho-section-header" onclick="toggleContactBrand('${brand.replace(/'/g,'\'')}')">
@@ -1729,15 +1729,25 @@ function renderContactBody(main, agencyPeople, clientPeople, vendors, projects2)
     </div>
     <div style="margin-top:10px">
       ${projects2.length?`<div style="font-size:10px;color:#888;font-weight:500;margin-bottom:6px">專案進度</div>
-      ${projects2.map((p,pi)=>`<div class="ho-project-row">
-        <span style="font-weight:500;min-width:100px;flex-shrink:0">${p.proj}</span>
-        <span class="ho-progress-text" data-brand="${encodeURIComponent(main.brand)}" data-proj="${encodeURIComponent(p.proj)}" data-idx="${pi}"
-          style="color:#555;flex:1;cursor:text;padding:2px 4px;border-radius:4px;min-height:18px"
-          onclick="editProjectProgress(this,event)"
-          title="點擊編輯進度">
-          ${p.progress||'<span style="color:#bbb;font-style:italic">點擊新增進度...</span>'}
-        </span>
-      </div>`).join('')}`:''}
+      ${projects2.map((p,pi)=>{
+        const statusColors={'執行中':'#EAF3DE','已結案':'#f0f0ed','暫停':'#FFF7ED','提案中':'#E6F1FB'};
+        const statusTextColors={'執行中':'#27500A','已結案':'#888','暫停':'#92400E','提案中':'#0C447C'};
+        const status=p.status||'執行中';
+        const isEnded=status==='已結案';
+        return `<div class="ho-project-row" style="${isEnded?'opacity:.55':''}">
+          <span style="font-weight:500;min-width:90px;flex-shrink:0;${isEnded?'text-decoration:line-through;color:#aaa':''}">${p.proj}</span>
+          <select data-contact-id="${p.id}" onchange="updateContactProjStatus(this)" onclick="event.stopPropagation()"
+            style="font-size:10px;padding:1px 4px;border:0.5px solid #ddd;border-radius:6px;background:${statusColors[status]||'#f0f0ed'};color:${statusTextColors[status]||'#555'};font-family:inherit;flex-shrink:0">
+            ${['執行中','提案中','暫停','已結案'].map(s=>`<option value="${s}"${s===status?'selected':''}>${s}</option>`).join('')}
+          </select>
+          <span class="ho-progress-text" data-brand="${encodeURIComponent(main.brand)}" data-proj="${encodeURIComponent(p.proj)}" data-idx="${pi}"
+            style="color:#555;flex:1;cursor:text;padding:2px 4px;border-radius:4px;min-height:18px;${isEnded?'color:#aaa':''}"
+            onclick="editProjectProgress(this,event)" title="點擊編輯進度">
+            ${p.progress||'<span style="color:#bbb;font-style:italic">點擊新增進度...</span>'}
+          </span>
+          <button class="task-action-btn" title="刪除此專案" onclick="deleteContactProject('${p.id}',event)" style="color:#E24B4A;flex-shrink:0"><i class="ti ti-trash" style="font-size:11px"></i></button>
+        </div>`;
+      }).join('')}`:''}
       <button class="g-btn" style="margin-top:6px;font-size:11px;padding:3px 10px" data-brand="${encodeURIComponent(main.brand)}" onclick="addContactProject(this,event)">
         <i class="ti ti-plus" style="font-size:11px"></i> 新增專案
       </button>
@@ -1747,6 +1757,33 @@ function renderContactBody(main, agencyPeople, clientPeople, vendors, projects2)
       <i class="ti ti-pencil" style="position:absolute;right:6px;top:6px;font-size:10px;color:#ccc"></i>
     </div>
   </div>`;
+}
+
+async function updateContactProjStatus(sel){
+  const id=sel.dataset.contactId;
+  const status=sel.value;
+  const contact=contacts.find(c=>String(c.id)===id);
+  if(!contact)return;
+  contact.projStatus=status;
+  // Update select color
+  const colors={'執行中':'#EAF3DE','已結案':'#f0f0ed','暫停':'#FFF7ED','提案中':'#E6F1FB'};
+  const textColors={'執行中':'#27500A','已結案':'#888','暫停':'#92400E','提案中':'#0C447C'};
+  sel.style.background=colors[status]||'#f0f0ed';
+  sel.style.color=textColors[status]||'#555';
+  await api('updateContact',{id:String(id),projStatus:status,user:currentUser});
+  renderHandover();
+  showToast('✓ 狀態已更新：'+status);
+}
+
+async function deleteContactProject(id, e){
+  e.stopPropagation();
+  const contact=contacts.find(c=>String(c.id)===id);
+  if(!contact)return;
+  if(!confirm('確定刪除「'+contact.project+'」這個專案記錄？'))return;
+  contacts=contacts.filter(c=>String(c.id)!==id);
+  await api('deleteContact',{id:String(id)});
+  renderHandover();
+  showToast('✓ 已刪除');
 }
 
 function addContactProject(btn, e){
