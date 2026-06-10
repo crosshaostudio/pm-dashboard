@@ -1727,18 +1727,123 @@ function renderContactBody(main, agencyPeople, clientPeople, vendors, projects2)
       ${main.cloudUrl?`<div class="ho-meta-item"><span>雲端</span><a href="${main.cloudUrl}" target="_blank" style="color:#378ADD">開啟</a></div>`:''}
       ${main.cloudOwner?`<div class="ho-meta-item"><span>雲端負責人</span>${main.cloudOwner}</div>`:''}
     </div>
-    ${projects2.length?`<div style="margin-top:10px">
-      <div style="font-size:10px;color:#888;font-weight:500;margin-bottom:6px">專案進度</div>
-      ${projects2.map(p=>`<div class="ho-project-row">
+    <div style="margin-top:10px">
+      ${projects2.length?`<div style="font-size:10px;color:#888;font-weight:500;margin-bottom:6px">專案進度</div>
+      ${projects2.map((p,pi)=>`<div class="ho-project-row">
         <span style="font-weight:500;min-width:100px;flex-shrink:0">${p.proj}</span>
-        <span style="color:#555">${p.progress||''}</span>
-      </div>`).join('')}
-    </div>`:''}
+        <span class="ho-progress-text" data-brand="${encodeURIComponent(main.brand)}" data-proj="${encodeURIComponent(p.proj)}" data-idx="${pi}"
+          style="color:#555;flex:1;cursor:text;padding:2px 4px;border-radius:4px;min-height:18px"
+          onclick="editProjectProgress(this,event)"
+          title="點擊編輯進度">
+          ${p.progress||'<span style="color:#bbb;font-style:italic">點擊新增進度...</span>'}
+        </span>
+      </div>`).join('')}`:''}
+      <button class="g-btn" style="margin-top:6px;font-size:11px;padding:3px 10px" data-brand="${encodeURIComponent(main.brand)}" onclick="addContactProject(this,event)">
+        <i class="ti ti-plus" style="font-size:11px"></i> 新增專案
+      </button>
+    </div>
     <div class="ho-progress" style="cursor:text;position:relative" data-brand="${encodeURIComponent(main.brand)}" onclick="editContactTodoByEl(this,event)" title="點擊編輯">
       ${main.todo?`<i class="ti ti-alert-circle" style="font-size:11px;margin-right:4px"></i>${main.todo}`:'<span style="color:#bbb;font-style:italic">點擊新增備註/進度...</span>'}
       <i class="ti ti-pencil" style="position:absolute;right:6px;top:6px;font-size:10px;color:#ccc"></i>
     </div>
   </div>`;
+}
+
+function addContactProject(btn, e){
+  e.stopPropagation();
+  const brand=decodeURIComponent(btn.dataset.brand||'');
+
+  // Show inline form below button
+  const existing=btn.parentNode.querySelector('.new-proj-form');
+  if(existing){existing.remove();return;}
+
+  const form=document.createElement('div');
+  form.className='new-proj-form';
+  form.style.cssText='display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap';
+  form.innerHTML=`
+    <input type="text" id="new-proj-name" placeholder="專案名稱" style="flex:1;min-width:120px;padding:5px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit;outline:none">
+    <input type="text" id="new-proj-progress" placeholder="目前進度（可空白）" style="flex:2;min-width:150px;padding:5px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit;outline:none">
+    <button class="g-btn primary" style="font-size:11px;padding:4px 10px" onclick="saveContactProject('${encodeURIComponent(brand)}',this)">新增</button>
+    <button class="g-btn" style="font-size:11px;padding:4px 8px" onclick="this.closest('.new-proj-form').remove()">取消</button>`;
+
+  btn.parentNode.insertBefore(form, btn.nextSibling);
+  form.querySelector('#new-proj-name').focus();
+
+  // Enter key submits
+  form.addEventListener('keydown', ev=>{
+    if(ev.key==='Enter') form.querySelector('button.primary').click();
+    if(ev.key==='Escape') form.remove();
+  });
+}
+
+async function saveContactProject(encodedBrand, btn){
+  const brand=decodeURIComponent(encodedBrand);
+  const projName=document.getElementById('new-proj-name')?.value.trim();
+  const progress=document.getElementById('new-proj-progress')?.value.trim()||'';
+  if(!projName){showToast('請輸入專案名稱');return;}
+
+  // Find the base contact for this brand
+  const baseContact=contacts.find(c=>c.brand===brand);
+  if(!baseContact){showToast('找不到品牌資料');return;}
+
+  btn.closest('.new-proj-form')?.remove();
+
+  // Add a new contact row with the same brand info but new project/progress
+  const newData={
+    brand, type:baseContact.type||'',
+    agencyName:baseContact.agencyName||'', agencyGroup:baseContact.agencyGroup||'',
+    agencyPerson:'', agencyTitle:'', agencyMail:'',
+    clientPerson:'', clientMail:'', clientGroup:'',
+    vendorName:'', vendorPerson:'', vendorMail:'', vendorGroup:'',
+    invoiceDay:'', reportDay:'', closeDay:'',
+    todo:'', cloudUrl:'', cloudOwner:'',
+    folder:'', project:projName, progress,
+    user:currentUser
+  };
+
+  const res=await api('addContact',newData);
+  if(res&&res.id){
+    contacts.push({id:String(res.id),...newData});
+    renderHandover();
+    showToast('✓ 已新增專案：'+projName);
+  } else {
+    showToast('❌ 新增失敗');
+  }
+}
+
+function editProjectProgress(el, e){
+  e.stopPropagation();
+  const brand=decodeURIComponent(el.dataset.brand||'');
+  const projName=decodeURIComponent(el.dataset.proj||'');
+
+  // Find the contact with this brand and project
+  const contact=contacts.find(c=>c.brand===brand&&c.project===projName);
+  if(!contact) return;
+
+  const cur=contact.progress||'';
+  const ta=document.createElement('textarea');
+  ta.value=cur;
+  ta.style.cssText='width:100%;min-height:60px;font-size:12px;font-family:inherit;padding:5px 7px;border:1.5px solid #378ADD;border-radius:6px;outline:none;resize:vertical;color:#555;line-height:1.5';
+  ta.placeholder='輸入專案進度...';
+
+  el.innerHTML='';
+  el.appendChild(ta);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+
+  async function save(){
+    const newVal=ta.value.trim();
+    contact.progress=newVal;
+    renderHandover();
+    await api('updateContact',{id:String(contact.id),progress:newVal,user:currentUser});
+    showToast('✓ 進度已儲存');
+  }
+
+  ta.addEventListener('blur', save);
+  ta.addEventListener('keydown', ev=>{
+    if(ev.key==='Escape'){ ev.preventDefault(); renderHandover(); }
+    if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){ ev.preventDefault(); save(); }
+  });
 }
 
 function editContactTodoByEl(el, e){
