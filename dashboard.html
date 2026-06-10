@@ -1735,7 +1735,9 @@ function renderContactBody(main, agencyPeople, clientPeople, vendors, projects2)
         const status=p.status||'執行中';
         const isEnded=status==='已結案';
         return `<div class="ho-project-row" style="${isEnded?'opacity:.55':''}">
-          <span style="font-weight:500;min-width:90px;flex-shrink:0;${isEnded?'text-decoration:line-through;color:#aaa':''}">${p.proj}</span>
+          <span class="ho-proj-name" data-contact-id="${p.id}"
+            style="font-weight:500;min-width:90px;flex-shrink:0;cursor:text;padding:2px 4px;border-radius:4px;${isEnded?'text-decoration:line-through;color:#aaa':''}"
+            onclick="editContactProjName(this,event)" title="點擊修改專案名稱">${p.proj}</span>
           <select data-contact-id="${p.id}" onchange="updateContactProjStatus(this)" onclick="event.stopPropagation()"
             style="font-size:10px;padding:1px 4px;border:0.5px solid #ddd;border-radius:6px;background:${statusColors[status]||'#f0f0ed'};color:${statusTextColors[status]||'#555'};font-family:inherit;flex-shrink:0">
             ${['執行中','提案中','暫停','已結案'].map(s=>`<option value="${s}"${s===status?'selected':''}>${s}</option>`).join('')}
@@ -1757,6 +1759,39 @@ function renderContactBody(main, agencyPeople, clientPeople, vendors, projects2)
       <i class="ti ti-pencil" style="position:absolute;right:6px;top:6px;font-size:10px;color:#ccc"></i>
     </div>
   </div>`;
+}
+
+function editContactProjName(el, e){
+  e.stopPropagation();
+  const id=el.dataset.contactId;
+  const contact=contacts.find(c=>String(c.id)===id);
+  if(!contact) return;
+
+  const cur=contact.project||'';
+  const input=document.createElement('input');
+  input.type='text';
+  input.value=cur;
+  input.style.cssText='width:100%;min-width:80px;font-size:12px;font-family:inherit;font-weight:500;padding:2px 5px;border:1.5px solid #378ADD;border-radius:6px;outline:none';
+
+  el.innerHTML='';
+  el.appendChild(input);
+  input.focus();
+  input.select();
+
+  async function save(){
+    const newVal=input.value.trim();
+    if(!newVal){renderHandover();return;}
+    contact.project=newVal;
+    renderHandover();
+    await api('updateContact',{id:String(id),project:newVal,user:currentUser});
+    showToast('✓ 專案名稱已更新');
+  }
+
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', ev=>{
+    if(ev.key==='Enter'){ ev.preventDefault(); input.blur(); }
+    if(ev.key==='Escape'){ ev.preventDefault(); renderHandover(); }
+  });
 }
 
 async function updateContactProjStatus(sel){
