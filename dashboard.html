@@ -2190,27 +2190,16 @@ function renderDaily(){
       card.ondragleave=()=>{card.style.outline='';card.style.opacity=isPastWeek?'.65':'1'};
       card.ondrop=async e=>{
         e.preventDefault();card.style.outline='';card.style.opacity=isPastWeek?'.65':'1';
+        // If it's a same-day sort drag, ignore at card level
+        const sortId=e.dataTransfer.getData('sort-task');
         const tid=e.dataTransfer.getData('text/plain');
+        if(!tid)return;
         const t=tasks.find(x=>String(x.id)===String(tid));
         if(!t)return;
-        const prevDate=t.date;
-        const prevGanttStart=t.ganttStart;
-        const prevGanttEnd=t.ganttEnd;
-        t.date=ds;
-        // If task has a single-day gantt bar (start=end=old date), move it too
-        const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd);
-        if(isSingleDayGantt){ t.ganttStart=ds; t.ganttEnd=ds; }
-        renderDaily();
-        const updateData={id:String(t.id),date:ds};
-        if(isSingleDayGantt){ updateData.ganttStart=ds; updateData.ganttEnd=ds; }
-        const res=await api('updateTask',updateData);
-        if(res&&res.ok){
-          if(isSingleDayGantt) renderGantt();
-          showToast(isSingleDayGantt?'✓ 任務已移動，甘特圖同步更新':'✓ 任務已移動並同步');
-        } else {
-          t.date=prevDate; t.ganttStart=prevGanttStart; t.ganttEnd=prevGanttEnd;
-          renderDaily();showToast('❌ 移動失敗，已還原');
-        }
+        // If dragged to same day — same-day sort, ignore
+        if(normDate(t.date)===ds){ return; }
+        // Cross-day drop: show date picker pre-filled with target day
+        openMoveDatePickerFromDrop(t.id, ds);
       };
 
       const wd=day.toLocaleDateString('zh-TW',{weekday:'short'});
@@ -2285,14 +2274,10 @@ function renderTaskEl(t){
   el.dataset.taskDate=t.date;
   el.ondragstart=e=>{
     if(isReadOnly){e.preventDefault();return;}
-    // Alt/Option key = cross-day move; normal = same-day sort
-    if(e.altKey){
-      e.dataTransfer.setData('text/plain',String(t.id));
-    } else {
-      e.dataTransfer.setData('sort-task',String(t.id));
-      e.dataTransfer.setData('text/plain',String(t.id));
-      el.classList.add('dragging-sort');
-    }
+    // Drag = same-day sort only
+    e.dataTransfer.setData('sort-task',String(t.id));
+    e.dataTransfer.setData('text/plain',String(t.id));
+    el.classList.add('dragging-sort');
   };
   el.ondragend=e=>{ el.classList.remove('dragging-sort'); document.querySelectorAll('.task-item').forEach(x=>x.classList.remove('drag-over-top','drag-over-bottom')); };
   el.ondragover=e=>{
@@ -2546,26 +2531,102 @@ async function deleteTask(id){
   }
 }
 
-async function moveTask(id){
+function openMoveDatePickerFromDrop(id, targetDs){
+  document.querySelectorAll('.move-date-popup').forEach(p=>p.remove());
   const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
-  const d=prompt('移動到哪天？（YYYY-MM-DD）',t.date);
-  if(d&&/\d{4}-\d{2}-\d{2}/.test(d)){
-    const prev=t.date;
-    const prevGS=t.ganttStart, prevGE=t.ganttEnd;
-    const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd);
-    t.date=d;
-    if(isSingleDayGantt){ t.ganttStart=d; t.ganttEnd=d; }
-    renderDaily();
-    const updateData={id:String(t.id),date:d};
-    if(isSingleDayGantt){ updateData.ganttStart=d; updateData.ganttEnd=d; }
-    const res=await api('updateTask',updateData);
-    if(!res||res.error){
-      t.date=prev; t.ganttStart=prevGS; t.ganttEnd=prevGE;
-      renderDaily();showToast('❌ 移動失敗，請重試');
-    } else {
-      if(isSingleDayGantt) renderGantt();
-      showToast(isSingleDayGantt?'✓ 已移動，甘特圖同步更新':'✓ 已移動並同步');
-    }
+
+  const popup=document.createElement('div');
+  popup.className='move-date-popup';
+  popup.style.cssText='position:fixed;z-index:1000;background:#fff;border:0.5px solid #378ADD;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.18);padding:14px;width:260px;top:50%;left:50%;transform:translate(-50%,-50%)';
+
+  // Show task name preview
+  const targetDate=new Date(targetDs+'T00:00:00');
+  const targetLabel=targetDate.toLocaleDateString('zh-TW',{month:'long',day:'numeric',weekday:'short'});
+
+  popup.innerHTML=`
+    <div style="font-size:12px;font-weight:500;color:#1a1a18;margin-bottom:4px">移動待辦事項</div>
+    <div style="font-size:11px;color:#888;margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${t.text}">${t.text}</div>
+    <div style="font-size:11px;color:#555;margin-bottom:8px">移動到：</div>
+    <input type="date" id="move-date-input" value="${targetDs}"
+      style="width:100%;padding:7px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none;margin-bottom:8px">
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+      ${[-1,1,7,14].map(n=>{
+        const d=fmtDate(addDays(dateOf(t.date||fmtDate(today)),n));
+        const label=n===-1?'前一天':n===1?'後一天':n===7?'+1週':'+2週';
+        return `<button class="g-btn" style="font-size:10px;padding:2px 7px" onclick="document.getElementById('move-date-input').value='${d}'">${label}</button>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end">
+      <button class="g-btn" onclick="document.querySelector('.move-date-popup').remove()">取消</button>
+      <button class="g-btn primary" style="font-size:12px" onclick="confirmMoveTask('${id}')">
+        <i class="ti ti-arrows-move" style="font-size:11px"></i> 確認移動
+      </button>
+    </div>`;
+
+  document.body.appendChild(popup);
+  popup.addEventListener('click',e=>e.stopPropagation());
+  const close=()=>{popup.remove();document.removeEventListener('click',close);};
+  setTimeout(()=>document.addEventListener('click',close),0);
+}
+
+function openMoveDatePicker(id, btn){
+  document.querySelectorAll('.move-date-popup').forEach(p=>p.remove());
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+
+  const popup=document.createElement('div');
+  popup.className='move-date-popup';
+  popup.style.cssText='position:fixed;z-index:1000;background:#fff;border:0.5px solid #ddd;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:12px;width:240px';
+
+  popup.innerHTML=`
+    <div style="font-size:11px;color:#888;margin-bottom:8px">移動到哪一天？</div>
+    <input type="date" id="move-date-input" value="${t.date||fmtDate(today)}"
+      style="width:100%;padding:6px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;outline:none">
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      ${[-1,1,7,14].map(n=>{
+        const d=fmtDate(addDays(dateOf(t.date||fmtDate(today)),n));
+        const label=n===-1?'前一天':n===1?'後一天':n===7?'+1週':'+2週';
+        return `<button class="g-btn" style="font-size:10px;padding:2px 7px" onclick="document.getElementById('move-date-input').value='${d}'">${label}</button>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
+      <button class="g-btn" onclick="document.querySelector('.move-date-popup').remove()">取消</button>
+      <button class="g-btn primary" style="font-size:12px" onclick="confirmMoveTask('${id}')">移動</button>
+    </div>`;
+
+  document.body.appendChild(popup);
+  const rect=btn.getBoundingClientRect();
+  let left=rect.left, top=rect.bottom+4;
+  if(left+250>window.innerWidth-8) left=Math.max(8,rect.right-250);
+  if(top+200>window.innerHeight-8) top=Math.max(8,rect.top-200-4);
+  popup.style.left=left+'px'; popup.style.top=top+'px';
+
+  // Focus the date input
+  setTimeout(()=>popup.querySelector('input')?.focus(),50);
+  const close=()=>{popup.remove();document.removeEventListener('click',close);};
+  setTimeout(()=>document.addEventListener('click',close),0);
+  popup.addEventListener('click',e=>e.stopPropagation());
+}
+
+async function confirmMoveTask(id){
+  const d=document.getElementById('move-date-input')?.value;
+  document.querySelector('.move-date-popup')?.remove();
+  if(!d) return;
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+  const prev=t.date;
+  const prevGS=t.ganttStart, prevGE=t.ganttEnd;
+  const isSingleDayGantt=t.ganttStart&&t.ganttEnd&&normDate(t.ganttStart)===normDate(t.ganttEnd);
+  t.date=d;
+  if(isSingleDayGantt){ t.ganttStart=d; t.ganttEnd=d; }
+  renderDaily();
+  const updateData={id:String(t.id),date:d};
+  if(isSingleDayGantt){ updateData.ganttStart=d; updateData.ganttEnd=d; }
+  const res=await api('updateTask',updateData);
+  if(!res||res.error){
+    t.date=prev; t.ganttStart=prevGS; t.ganttEnd=prevGE;
+    renderDaily();showToast('❌ 移動失敗，請重試');
+  } else {
+    if(isSingleDayGantt) renderGantt();
+    showToast(isSingleDayGantt?'✓ 已移動至 '+d+'，甘特圖同步':'✓ 已移動至 '+d);
   }
 }
 
