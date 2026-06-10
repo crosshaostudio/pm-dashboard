@@ -1734,8 +1734,51 @@ function renderContactBody(main, agencyPeople, clientPeople, vendors, projects2)
         <span style="color:#555">${p.progress||''}</span>
       </div>`).join('')}
     </div>`:''}
-    ${main.todo?`<div class="ho-progress"><i class="ti ti-alert-circle" style="font-size:11px"></i> ${main.todo}</div>`:''}
+    <div class="ho-progress" style="cursor:text;position:relative" data-brand="${encodeURIComponent(main.brand)}" onclick="editContactTodoByEl(this,event)" title="點擊編輯">
+      ${main.todo?`<i class="ti ti-alert-circle" style="font-size:11px;margin-right:4px"></i>${main.todo}`:'<span style="color:#bbb;font-style:italic">點擊新增備註/進度...</span>'}
+      <i class="ti ti-pencil" style="position:absolute;right:6px;top:6px;font-size:10px;color:#ccc"></i>
+    </div>
   </div>`;
+}
+
+function editContactTodoByEl(el, e){
+  e.stopPropagation();
+  const brand=decodeURIComponent(el.dataset.brand||'');
+  editContactTodo(brand, el);
+}
+
+function editContactTodo(brand, el){
+  const contact=contacts.find(c=>c.brand===brand);
+  if(!contact)return;
+  const cur=contact.todo||'';
+
+  // Replace with textarea inline
+  const rect=el.getBoundingClientRect();
+  const ta=document.createElement('textarea');
+  ta.value=cur;
+  ta.style.cssText='width:100%;min-height:80px;font-size:12px;font-family:inherit;padding:7px;border:1.5px solid #378ADD;border-radius:6px;outline:none;resize:vertical;background:#FFFBCC;color:#555;line-height:1.5';
+  ta.placeholder='輸入備註/進度...';
+
+  el.innerHTML='';
+  el.appendChild(ta);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+
+  async function save(){
+    const newVal=ta.value.trim();
+    contact.todo=newVal;
+    // Re-render this brand's section
+    renderHandover();
+    // Save to Sheets
+    await api('updateContact',{id:String(contact.id),todo:newVal,user:currentUser});
+    showToast('✓ 備註已儲存');
+  }
+
+  ta.addEventListener('blur', save);
+  ta.addEventListener('keydown', ev=>{
+    if(ev.key==='Escape'){ ev.preventDefault(); renderHandover(); }
+    if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){ ev.preventDefault(); save(); }
+  });
 }
 
 function toggleContactBrand(brand){
