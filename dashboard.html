@@ -1403,6 +1403,13 @@ function openRepeatModal(taskId){
       <input id="repeat-days-input" type="text" placeholder="例：1,15,28" value="${curRule.replace(/w\d/g,'').replace(/,+/g,',').replace(/^,|,$/g,'')}"
         style="width:100%;padding:6px 10px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit;outline:none">
     </div>
+    <div style="margin-top:12px;padding:10px 12px;background:#f5f5f3;border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <i class="ti ti-calendar-off" style="font-size:13px;color:#888;flex-shrink:0"></i>
+      <label style="font-size:12px;color:#555;flex-shrink:0">重複結束日</label>
+      <input type="date" id="repeat-until-input" value="${curRule.match(/until:([\d-]+)/)?.[1]||''}"
+        style="flex:1;padding:5px 8px;border:0.5px solid #ddd;border-radius:8px;font-size:12px;font-family:inherit;outline:none">
+      <span style="font-size:11px;color:#aaa;flex-shrink:0">（空白 = 持續重複）</span>
+    </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button class="g-btn" onclick="document.getElementById('repeat-modal-overlay').remove()">取消</button>
       <button class="g-btn primary" onclick="saveRepeat('${taskId}')">儲存</button>
@@ -1454,6 +1461,10 @@ async function saveRepeat(taskId){
     repeatRule=[...wdays,...mdays].join(',');
   }
 
+  // Append until date
+  const untilVal=(document.getElementById('repeat-until-input')?.value||'').trim();
+  if(untilVal&&repeatVal!=='none') repeatRule=(repeatRule?repeatRule+',':'')+'until:'+untilVal;
+
   const prev={repeat:t.repeat,repeatRule:t.repeatRule};
   t.repeat=repeatVal; t.repeatRule=repeatRule;
 
@@ -1477,7 +1488,11 @@ async function saveRepeat(taskId){
 
 async function generateRepeatTasks(srcTask){
   const today2=new Date(); today2.setHours(0,0,0,0);
-  const endDate=new Date(today2.getFullYear()+1,11,31);
+  // Check for until date in repeatRule
+  const untilMatch=(srcTask.repeatRule||'').match(/until:([\d-]+)/);
+  const untilDate=untilMatch?dateOf(untilMatch[1]):null;
+  // If no end date set, repeat indefinitely (up to 3 years for practical limit)
+  const endDate=untilDate||new Date(today2.getFullYear()+3,11,31);
   const srcDate=new Date(normDate(srcTask.date));
   const existing=new Set(tasks.filter(t=>t.text===srcTask.text&&t.projId===srcTask.projId).map(t=>normDate(t.date)));
   const toCreate=[];
@@ -2680,8 +2695,10 @@ function renderTaskEl(t){
   if(t.repeat&&t.repeat!=='none'){
     const repBadge=document.createElement('div');
     const repLabels={weekly:'每週重複',monthly:'每月重複',custom:'自訂重複'};
+    const untilM=(t.repeatRule||'').match(/until:([\d-]+)/);
+    const untilStr=untilM?' 至 '+untilM[1]:'';
     repBadge.style.cssText='font-size:9px;color:'+(isDark?'rgba(255,255,255,.65)':'#378ADD')+';margin-top:1px';
-    repBadge.innerHTML='<i class="ti ti-repeat" style="font-size:9px"></i> '+(repLabels[t.repeat]||t.repeat);
+    repBadge.innerHTML='<i class="ti ti-repeat" style="font-size:9px"></i> '+(repLabels[t.repeat]||t.repeat)+untilStr;
     metaWrap.appendChild(repBadge);
   }
 
