@@ -398,7 +398,22 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
 <div class="toast" id="toast"></div>
 
 <script>
-const COLORS=['#4F7BE9','#E9664F','#4FBE82','#C24FE9','#E9BE4F','#4FBEE9','#E94F99'];
+const COLORS=[
+  '#4F7BE9','#E9664F','#4FBE82','#C24FE9','#E9BE4F','#4FBEE9','#E94F99',
+  '#7B4FE9','#4FE9D4','#E98B4F','#A8E94F','#E94F4F','#4FBBE9','#E9E44F',
+  '#9B59B6','#27AE60','#E67E22','#2980B9','#C0392B','#16A085'
+];
+
+function nextUniqueColor(){
+  const used=new Set(projects.map(p=>p.color).filter(Boolean));
+  const unused=COLORS.filter(c=>!used.has(c));
+  if(unused.length) return unused[0];
+  // All used — pick least used
+  const counts={};
+  COLORS.forEach(c=>counts[c]=0);
+  projects.forEach(p=>{ if(p.color&&counts[p.color]!==undefined) counts[p.color]++; });
+  return COLORS.reduce((a,b)=>counts[a]<=counts[b]?a:b);
+}
 
 const DEFAULT_TAG_COLORS = [
   { id:'yellow-light', label:'上刊／次重要／追客戶媒體', bg:'#FFFBCC', border:'#E6D94F', text:'#7A6E00' },
@@ -869,6 +884,67 @@ async function toggleCollab(projId, user, add){
   showToast(add?'✓ 已新增協作者：'+user:'✓ 已移除協作者：'+user);
 }
 
+function openProjColorPicker(projId, e){
+  e.stopPropagation();
+  document.querySelectorAll('.proj-color-popup').forEach(p=>p.remove());
+  const proj=projects.find(x=>String(x.id)===String(projId));if(!proj)return;
+
+  const popup=document.createElement('div');
+  popup.className='proj-color-popup';
+  popup.style.cssText='position:fixed;z-index:1000;background:#fff;border:0.5px solid #ddd;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:10px;width:200px';
+
+  // Preset colors grid
+  const grid=document.createElement('div');
+  grid.style.cssText='display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:8px';
+  COLORS.forEach(c=>{
+    const swatch=document.createElement('div');
+    swatch.style.cssText=`width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${c===proj.color?'#1a1a18':'transparent'};transition:transform .1s`;
+    swatch.title=c;
+    swatch.onmouseenter=()=>swatch.style.transform='scale(1.15)';
+    swatch.onmouseleave=()=>swatch.style.transform='';
+    swatch.onclick=async ev=>{
+      ev.stopPropagation();
+      popup.remove();
+      await setProjColor(projId, c);
+    };
+    grid.appendChild(swatch);
+  });
+  popup.appendChild(grid);
+
+  // Custom color picker
+  const customRow=document.createElement('div');
+  customRow.style.cssText='display:flex;align-items:center;gap:8px;border-top:0.5px solid #f0f0ed;padding-top:8px';
+  customRow.innerHTML=`<label style="font-size:11px;color:#888;flex-shrink:0">自訂</label>
+    <input type="color" value="${proj.color||'#4F7BE9'}" style="flex:1;height:28px;border:none;cursor:pointer;border-radius:6px;padding:0">`;
+  const colorInput=customRow.querySelector('input');
+  colorInput.onchange=async()=>{
+    popup.remove();
+    await setProjColor(projId, colorInput.value);
+  };
+  popup.appendChild(customRow);
+
+  document.body.appendChild(popup);
+  const btn=e.currentTarget||e.target;
+  const rect=btn.getBoundingClientRect();
+  let left=rect.right+4, top=rect.top;
+  if(left+210>window.innerWidth-8) left=Math.max(8,rect.left-214);
+  if(top+180>window.innerHeight-8) top=Math.max(8,window.innerHeight-188);
+  popup.style.left=left+'px'; popup.style.top=top+'px';
+  const close=()=>{popup.remove();document.removeEventListener('click',close);};
+  setTimeout(()=>document.addEventListener('click',close),0);
+  popup.addEventListener('click',e=>e.stopPropagation());
+}
+
+async function setProjColor(projId, color){
+  const proj=projects.find(x=>String(x.id)===String(projId));if(!proj)return;
+  const prev=proj.color;
+  proj.color=color;
+  renderProjects(); renderGantt(); renderDaily();
+  const res=await api('updateProject',{id:String(projId),color});
+  if(!res||res.error){ proj.color=prev; renderProjects(); showToast('❌ 更新失敗'); }
+  else showToast('✓ 顏色已更新');
+}
+
 function openOwnerPicker(projId, e){
   e.stopPropagation();
   document.querySelectorAll('.owner-picker-popup').forEach(p=>p.remove());
@@ -1094,6 +1170,7 @@ function renderProjects(){
     actions.style.cssText='display:none;gap:2px;align-items:center;flex-shrink:0';
     const canManageProj=currentRole==='owner'||(currentRole==='personal'&&(p.owner||'')=== currentUser);
     actions.innerHTML=`
+      ${canManageProj?`<button class="task-action-btn" title="更改專案顏色" onclick="openProjColorPicker('${p.id}',event)" style="font-size:12px"><i class="ti ti-palette" aria-hidden="true"></i></button>`:''}
       ${currentRole==='owner'?`<button class="task-action-btn" title="指派負責人" onclick="openOwnerPicker('${p.id}',event)" style="font-size:12px"><i class="ti ti-user-circle" aria-hidden="true"></i></button>`:''}
       ${canManageProj?`<button class="task-action-btn" title="指派協作者" onclick="openCollabPicker('${p.id}',event)" style="font-size:12px"><i class="ti ti-users" aria-hidden="true"></i></button>`:''}
       ${currentRole==='owner'?`<button class="task-action-btn" title="刪除專案" onclick="deleteProjectById('${p.id}',event)" style="font-size:12px;color:#E24B4A"><i class="ti ti-trash" aria-hidden="true"></i></button>`:''}`;
@@ -2864,7 +2941,7 @@ async function confirmMoveTask(id){
 
 async function addProject(){
   const name=prompt('專案名稱：');if(!name)return;
-  const color=COLORS[projects.length%COLORS.length];
+  const color=nextUniqueColor();
   // If personal role, make sure we have the right username before adding
   // Do a quick check to get _userName if not set yet
   if(currentRole==='personal'&&currentUser==='我'){
