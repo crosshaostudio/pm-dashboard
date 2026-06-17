@@ -2751,7 +2751,7 @@ function renderTaskEl(t){
     <button class="task-action-btn" title="標籤顏色" onclick="openTagPicker('${t.id}',this)" style="color:${isDark?'rgba(255,255,255,.8)':tc.id==='none'?'#aaa':tc.border}"><i class="ti ti-palette" aria-hidden="true"></i></button>
     <button class="task-action-btn" title="修改名稱" onclick="startRenameTask('${t.id}',this)" style="color:${btnColor}"><i class="ti ti-edit" aria-hidden="true"></i></button>
     <button class="task-action-btn" title="移動" onclick="moveTask('${t.id}')" style="color:${btnColor}"><i class="ti ti-arrows-move" aria-hidden="true"></i></button>
-    <button class="task-action-btn" title="刪除" onclick="deleteTask('${t.id}')" style="color:${isDark?'#ff8080':'#E24B4A'}"><i class="ti ti-trash" aria-hidden="true"></i></button>`;
+    <button class="task-action-btn" title="刪除" onclick="confirmDeleteTask('${t.id}')" style="color:${isDark?'#ff8080':'#E24B4A'}"><i class="ti ti-trash" aria-hidden="true"></i></button>`;
 
   el.appendChild(checkDiv);
   el.appendChild(metaWrap);
@@ -2863,6 +2863,80 @@ async function toggleTask(id){
   } else {
     showToast(t.done?'✓ 任務完成，已同步':'已取消完成');
   }
+}
+
+function confirmDeleteTask(id){
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+
+  // Find repeat siblings: same text + projId, future dates, not done
+  const siblings=tasks.filter(x=>
+    String(x.id)!==String(id) &&
+    x.text===t.text &&
+    String(x.projId)===String(t.projId) &&
+    x.date>t.date &&
+    x.date!=='9999-01-01' &&
+    !(x.done===true||String(x.done)==='true')
+  );
+
+  if(!siblings.length){
+    // No future repeats, just delete directly
+    deleteTask(id);
+    return;
+  }
+
+  // Show choice popup
+  const overlay=document.createElement('div');
+  overlay.className='repeat-modal-overlay';
+  overlay.id='delete-choice-overlay';
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  overlay.innerHTML=`
+  <div class="repeat-modal" style="width:380px">
+    <h3 style="color:#E24B4A"><i class="ti ti-trash" style="font-size:14px;margin-right:6px"></i>刪除待辦事項</h3>
+    <div style="font-size:13px;font-weight:500;color:#1a1a18;margin-bottom:6px;word-break:break-word">${t.text}</div>
+    <div style="font-size:11px;color:#888;margin-bottom:16px">發現 ${siblings.length} 個後續重複的相同任務</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="g-btn" style="justify-content:flex-start;padding:10px 14px;border-color:#ddd"
+        onclick="deleteTask('${id}');document.getElementById('delete-choice-overlay').remove()">
+        <i class="ti ti-circle-dot" style="font-size:14px;flex-shrink:0"></i>
+        <div style="text-align:left">
+          <div style="font-size:12px;font-weight:500">只刪除這一個</div>
+          <div style="font-size:10px;color:#888">後續 ${siblings.length} 筆重複保留</div>
+        </div>
+      </button>
+      <button class="g-btn" style="justify-content:flex-start;padding:10px 14px;border-color:#E24B4A;color:#E24B4A"
+        onclick="deleteTaskAndFuture('${id}');document.getElementById('delete-choice-overlay').remove()">
+        <i class="ti ti-trash" style="font-size:14px;flex-shrink:0"></i>
+        <div style="text-align:left">
+          <div style="font-size:12px;font-weight:500">刪除這個及之後所有重複</div>
+          <div style="font-size:10px;color:#E24B4A">共刪除 ${siblings.length+1} 筆</div>
+        </div>
+      </button>
+    </div>
+    <div style="margin-top:12px;text-align:right">
+      <button class="g-btn" onclick="document.getElementById('delete-choice-overlay').remove()">取消</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function deleteTaskAndFuture(id){
+  const t=tasks.find(x=>String(x.id)===String(id));if(!t)return;
+
+  // Collect this + all future same-name tasks in same project
+  const toDelete=tasks.filter(x=>
+    (String(x.id)===String(id)||
+     (x.text===t.text && String(x.projId)===String(t.projId) && x.date>=t.date && x.date!=='9999-01-01'))
+    && !(x.done===true||String(x.done)==='true')
+  );
+
+  showToast('刪除中...');
+  let deleted=0;
+  for(const task of toDelete){
+    const res=await api('deleteTask',{id:String(task.id)});
+    if(res&&res.ok){ tasks=tasks.filter(x=>String(x.id)!==String(task.id)); deleted++; }
+  }
+  renderDaily(); renderProjects(); renderGantt();
+  showToast('✓ 已刪除 '+deleted+' 筆（含後續重複）');
 }
 
 async function deleteTask(id){
