@@ -315,6 +315,7 @@ body[data-role='editor'] .add-proj-btn { display:none !important; }
         <button class="icon-btn" onclick="syncAll()" title="同步"><i class="ti ti-cloud-upload" style="font-size:14px"></i><span style="font-size:11px">同步</span></button>
         <button class="icon-btn" onclick="openPanel('share')" title="共享"><i class="ti ti-share" style="font-size:14px"></i></button>
         <button class="icon-btn" onclick="openPanel('notif')" title="通知"><i class="ti ti-bell" style="font-size:14px"></i><span id="notif-badge" class="badge" style="display:none"></span></button>
+      <button class="icon-btn" onclick="dedupeDaily()" title="清除重複待辦"><i class="ti ti-copy-off" style="font-size:14px"></i></button>
       <button class="icon-btn" onclick="openTagManager()" title="顏色標籤設定"><i class="ti ti-tags" style="font-size:14px"></i></button>
       <button class="icon-btn" onclick="openPanel('log')" title="編輯紀錄"><i class="ti ti-history" style="font-size:14px"></i></button>
       <button class="icon-btn" onclick="exportBackup()" title="匯出備份 Excel"><i class="ti ti-database-export" style="font-size:14px"></i></button>
@@ -2386,6 +2387,43 @@ async function deleteCloudLinkById(id){
   await api('deleteCloudLink',{id:String(id)});
   renderHandover();
   showToast('✓ 已刪除');
+}
+// ─────────────────────────────────────────────────────────
+
+// ── Dedupe Daily Tasks ────────────────────────────────────
+async function dedupeDaily(){
+  const activeTasks=tasks.filter(t=>t.date&&t.date!=='9999-01-01'&&!(t.done===true||String(t.done)==='true'));
+  const groups={};
+  activeTasks.forEach(t=>{
+    const key=t.text.trim()+'||'+String(t.projId);
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(t);
+  });
+  const dupGroups=Object.values(groups).filter(g=>g.length>1);
+  if(!dupGroups.length){ showToast('目前沒有重複的待辦事項'); return; }
+
+  const toDelete=[];
+  dupGroups.forEach(group=>{
+    const sorted=[...group].sort((a,b)=>a.date.localeCompare(b.date));
+    toDelete.push(...sorted.slice(1));
+  });
+
+  const summary=dupGroups.slice(0,5).map(g=>{
+    const sorted=[...g].sort((a,b)=>a.date.localeCompare(b.date));
+    const proj=projects.find(p=>String(p.id)===String(g[0].projId));
+    return '・'+g[0].text+'（'+(proj?proj.name:'')+'）：保留 '+sorted[0].date+'，刪除 '+(sorted.length-1)+' 筆';
+  }).join('\n')+(dupGroups.length>5?'\n...等共 '+dupGroups.length+' 組':'');
+
+  if(!confirm('找到 '+dupGroups.length+' 組重複，共刪除 '+toDelete.length+' 筆。\n\n'+summary+'\n\n確定執行？')) return;
+
+  showToast('刪除中，請稍候...');
+  let deleted=0;
+  for(const t of toDelete){
+    const res=await api('deleteTask',{id:String(t.id)});
+    if(res&&res.ok){ tasks=tasks.filter(x=>String(x.id)!==String(t.id)); deleted++; }
+  }
+  renderDaily(); renderProjects(); renderGantt();
+  showToast('✓ 已清除 '+deleted+' 筆重複待辦');
 }
 // ─────────────────────────────────────────────────────────
 
