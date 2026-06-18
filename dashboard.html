@@ -3470,14 +3470,68 @@ function processExcelFile(file){
       const ws=workbook.Sheets[sheetName];
       const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:true});
 
-      const tasks=parseScheduleRows(rows);
-      showImportPreview(tasks);
+      const fmt=detectExcelFormat(rows);
+      const tasks=fmt==='mando'?parseMandoRows(rows):parseScheduleRows(rows);
+      showImportPreview(tasks, fmt);
     }catch(err){
       document.getElementById('import-preview').innerHTML=
         `<div style="color:#E24B4A;font-size:12px;padding:10px;background:#FEF2F2;border-radius:8px">解析失敗：${err.message}</div>`;
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function detectExcelFormat(rows){
+  // Check for Mando-style: header row with '素材名稱及編號' / '走期'
+  for(let i=0;i<Math.min(10,rows.length);i++){
+    const r=rows[i]||[];
+    const rowStr=r.map(v=>String(v||'')).join('');
+    if(rowStr.includes('素材名稱') || rowStr.includes('走期')) return 'mando';
+  }
+  return 'calendar';
+}
+
+function parseMandoRows(rows){
+  // Format: col0=name, col1=進稿日, col2=走期起, col3=走期迄
+  const tasks=[];
+  let headerFound=false;
+  for(const row of rows){
+    if(!row) continue;
+    const r=row.map(v=>v===null?'':v);
+    // Detect header row
+    const rowStr=r.map(v=>String(v||'')).join('');
+    if(rowStr.includes('素材名稱') || rowStr.includes('走期')){
+      headerFound=true; continue;
+    }
+    if(!headerFound) continue;
+    const name=String(r[0]||'').trim();
+    if(!name) continue;
+
+    function toDs(v){
+      if(!v) return '';
+      if(typeof v==='string'&&v.length>=10) return v.slice(0,10);
+      if(v instanceof Date||String(v).includes('T')||String(v).includes(' 00:00')){
+        const d=new Date(v); if(isNaN(d)) return '';
+        const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dy=String(d.getDate()).padStart(2,'0');
+        return y+'-'+m+'-'+dy;
+      }
+      // Excel serial number
+      if(typeof v==='number'&&v>40000){
+        const d=new Date(Math.round((v-25569)*86400000));
+        const tw=new Date(d.getTime()+8*3600000);
+        return tw.getUTCFullYear()+'-'+String(tw.getUTCMonth()+1).padStart(2,'0')+'-'+String(tw.getUTCDate()).padStart(2,'0');
+      }
+      return String(v).slice(0,10);
+    }
+
+    const draft=toDs(r[1]);
+    const start=toDs(r[2]);
+    const end=toDs(r[3]);
+    if(start&&end){
+      tasks.push({date:draft||start, task:name, ganttStart:start, ganttEnd:end, selected:true});
+    }
+  }
+  return tasks;
 }
 
 function parseScheduleRows(rows){
@@ -3576,7 +3630,8 @@ function parseScheduleRows(rows){
   });
 }
 
-function showImportPreview(tasks){
+function showImportPreview(tasks, fmt){
+  window.importFormat=fmt||'calendar';
   const preview=document.getElementById('import-preview');
   if(!tasks.length){
     preview.innerHTML='<div style="color:#888;font-size:12px;padding:12px;text-align:center">未找到任何任務，請確認是月曆格式的排程表</div>';
@@ -3630,6 +3685,7 @@ async function confirmImport(){
   if(!projId){showToast('請選擇專案');return;}
 
   const groupName=document.getElementById('import-group-name')?.value.trim()||'匯入排程';
+  const fmt=window.importFormat||'calendar';
   document.getElementById('import-overlay').remove();
 
   showToast('匯入中，請稍候...');
@@ -3637,35 +3693,37 @@ async function confirmImport(){
   let added=0;
   const newTaskIds=[];
 
-  // Each task = one gantt bar (start=end=that day) + daily todo
   for(const t of sel){
+    let ganttStart=t.ganttStart||t.date;
+    let ganttEnd=t.ganttEnd||t.date;
+    // calendar format: single-day gantt
+    if(fmt==='calendar'){ ganttStart=t.date; ganttEnd=t.date; }
+
     const r=await api('addTask',{
       text:t.task, date:t.date, projId,
       done:false, prog:0,
-      ganttStart:t.date, ganttEnd:t.date,
+      ganttStart, ganttEnd,
       tagColor:'', repeat:'none', repeatRule:''
     });
     if(r&&r.id){
-      const newTask={
+      tasks.push({
         id:String(r.id), text:t.task, date:t.date,
         projId:String(projId), done:false, prog:0,
-        ganttStart:t.date, ganttEnd:t.date,
+        ganttStart, ganttEnd,
         tagColor:'none', repeat:'none', repeatRule:''
-      };
-      tasks.push(newTask);
+      });
       newTaskIds.push(String(r.id));
       added++;
     }
   }
 
-  // Auto-assign all imported tasks to the same group
   if(groupName&&newTaskIds.length){
     newTaskIds.forEach(id=>{ ganttGroups[id]=groupName; });
     localStorage.setItem('pm_gantt_groups',JSON.stringify(ganttGroups));
   }
 
   renderGantt();renderDaily();renderProjects();
-  showToast('✓ 匯入完成：'+added+' 筆任務已加入甘特圖、每日待辦，群組「'+groupName+'」');
+  showToast('✓ 匯入完成：'+added+' 筆任務，群組「'+groupName+'」');
 }
 // ─────────────────────────────────────────────────────────
 
